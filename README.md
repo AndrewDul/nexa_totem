@@ -245,23 +245,21 @@ Example states:
 
 ```text
 docs/
-hardware/
-mechanical/
+system/
 firmware/
-software/
-assets/
-scripts/
 tests/
+scripts/
+assets/
+config/
 ```
 
 - `docs/` contains product, hardware, mechanical and software notes.
-- `hardware/` contains wiring and component notes.
-- `mechanical/` contains 3D models and print files.
-- `firmware/` contains Arduino and remote firmware.
-- `software/` contains Raspberry Pi runtime, LCD UI and web panel.
-- `assets/` contains renders, icons, sounds and branding.
-- `scripts/` contains setup and test scripts.
-- `tests/` contains hardware, firmware and software checks.
+- `system/` contains the Raspberry Pi runtime, LCD UI, local web panel, features, devices and services.
+- `firmware/` contains Arduino Uno, ESP8266 remote and ESP32-S3 experiment firmware.
+- `tests/` contains unit, integration, hardware, firmware, safety and smoke checks.
+- `scripts/` contains setup, run, test, hardware and Git helper scripts.
+- `assets/` contains UI files, icons, sounds and branding.
+- `config/` contains example configuration files.
 
 ## Roadmap
 
@@ -276,4 +274,3 @@ tests/
 ## Current Status
 
 NeXa ToTem is not finished yet. The current work is focused on planning the product, choosing the hardware, mapping the system design, and preparing the repository for the first real build steps.
-
