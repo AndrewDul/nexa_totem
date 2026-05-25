@@ -91,3 +91,23 @@ I added test runner scripts.
 I added README files explaining how the diagnostics and reports are organized.
 
 This prepares NeXa ToTem to show logs, statuses, reports, validation results, and test results in one diagnostic panel later.
+
+## 2026-05-25 — NeXa Resource Monitoring and Benchmark Foundation
+
+I added a resource monitoring foundation for NeXa-owned processes.
+
+The diagnostic panel should show NeXa resource usage, not the full Linux process list.
+
+I added a process registry for backend, Godot LCD UI, web panel, camera service, sensor service, remote link, diagnostics runner, and test runner.
+
+I added process CPU/RAM snapshot support.
+
+I added benchmark helpers for component/check durations.
+
+I added scripts for checking NeXa resources and running quick resource benchmarks.
+
+I added saved report support for future diagnostic panel.
+
+I prepared Godot telemetry placeholders for FPS, frame time, and render data, but I did not fake GPU usage.
+
+GPU usage percent is reported as unsupported/unknown until there is a reliable measurement source.

@@ -281,6 +281,18 @@ Heavy validations, such as camera capture or audio test sound, are optional so n
 
 The future diagnostic panel will read saved reports instead of running hardware checks every time it opens.
 
+## NeXa Resource Monitoring
+
+NeXa resource monitoring is prepared for NeXa-owned processes and components only.
+
+The resource report is meant to show NeXa backend, Godot LCD UI, web panel, camera service, sensor service, remote link, diagnostics runner, and test runner status. It is not meant to show the full Linux process table.
+
+Resource reports and benchmark reports are saved only when requested.
+
+The future diagnostic panel will read saved resource reports so it can load quickly.
+
+Heavy checks are avoided by default. Godot FPS and frame timing are prepared for future telemetry, and GPU usage stays unknown until there is a reliable measurement source.
+
 ## Roadmap
 
 1. Inventory and measurements

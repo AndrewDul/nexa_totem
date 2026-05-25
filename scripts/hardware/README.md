@@ -18,3 +18,7 @@ The audio test sound is optional and only runs when requested.
 Diagnostics scripts can print JSON with `--json`. They can save latest reports with `--save-report` and timestamped history reports with `--save-history` when the script supports it.
 
 Saved reports are prepared for the future diagnostic panel. The panel should read saved JSON instead of running hardware checks every time it opens.
+
+`check_nexa_resources.py` checks resource use for known NeXa processes and components only. It does not print the whole Linux process table.
+
+Resource reports are saved only when requested with `--save-report` or `--save-history`.

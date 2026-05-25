@@ -10,6 +10,8 @@ DEFAULT_LATEST_REPORTS = (
     "camera_status",
     "camera_capture",
     "unit_tests",
+    "nexa_resources",
+    "resource_benchmark",
 )
 
 
@@ -94,4 +96,3 @@ def build_diagnostic_panel_data(report_root=DEFAULT_REPORT_ROOT, report_types=DE
         "checked_at": utc_now_iso(),
         "source": "diagnostic_panel_data",
     }
-

@@ -6,7 +6,9 @@ This folder is for scripts that run project checks and tests.
 
 `run_all_checks.py` runs unit tests and the fast diagnostics runner. It does not run camera capture by default.
 
-Both scripts can print JSON with `--json`.
+`run_resource_benchmark.py` runs quick timing checks for existing diagnostics and panel data building. It does not run camera capture by default.
+
+These scripts can print JSON with `--json`.
 
 When requested, test results can be saved as latest reports or history reports for the future diagnostic panel:
 
@@ -14,3 +16,5 @@ When requested, test results can be saved as latest reports or history reports f
 - `--save-history`
 
 This lets the future panel show the last test result without running tests every time the panel loads.
+
+Resource benchmark reports are also saved only when requested.
