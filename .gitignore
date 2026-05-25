@@ -1,0 +1,75 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+secrets.json
+local.config.json
+config.local.json
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Claude / Codex / AI local traces
+.claude/
+.codex/
+.agents/
+.ai/
+.ai-cache/
+CLAUDE.local.md
+.claude.json
+.claude.local.json
+.codex.json
+.codex.local.json
+codex.local.json
+
+# Logs and temp files
+logs/
+*.log
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+*.orig
+*.rej
+
+# Local generated data
+var/log/
+var/reports/
+var/data/
+*.sqlite
+*.sqlite3
+*.db
+
+# 3D printing generated files
+*.gcode
+*.3mf
+*.ctb
+*.photon
+
+# Keep folder placeholders
+!.gitkeep
