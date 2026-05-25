@@ -1,4 +1,5 @@
 # Logging
 
-This folder is for local runtime logging code. It is prepared for future project work.
+This folder contains the first runtime logging helper.
 
+Logs are written under `var/log/` when the helper is used. That runtime folder is ignored by Git.

@@ -1,0 +1,1 @@
+"""Structured diagnostics helpers."""

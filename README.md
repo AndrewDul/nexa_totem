@@ -261,6 +261,12 @@ config/
 - `assets/` contains UI files, icons, sounds and branding.
 - `config/` contains example configuration files.
 
+## System Health and Diagnostics
+
+NeXa ToTem will use structured diagnostics so system state can be shared by scripts, future LCD UI, the local web panel, warnings, and the diagnostic panel.
+
+The first runtime foundation includes Raspberry Pi health checks and USB speaker/audio status. These checks report plain status data with a component name, status, message, details, check time, and source.
+
 ## Roadmap
 
 1. Inventory and measurements
