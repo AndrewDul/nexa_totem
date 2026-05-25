@@ -265,7 +265,9 @@ config/
 
 NeXa ToTem will use structured diagnostics so system state can be shared by scripts, future LCD UI, the local web panel, warnings, and the diagnostic panel.
 
-The first runtime foundation includes Raspberry Pi health checks and USB speaker/audio status. These checks report plain status data with a component name, status, message, details, check time, and source.
+The current runtime foundation includes Raspberry Pi health checks, USB speaker/audio status, and CSI camera diagnostics. These checks report plain status data with a component name, status, message, details, check time, and source.
+
+Camera diagnostics are designed to be fast by default. The quick check looks for Raspberry Pi camera tools and checks whether a CSI camera is visible. It does not take a photo unless capture validation is requested. The camera results are prepared for the future LCD UI, web panel, warnings, and diagnostic panel.
 
 ## Roadmap
 

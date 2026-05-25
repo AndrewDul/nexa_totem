@@ -51,3 +51,23 @@ I added scripts for Pi health, audio output, and combined system status.
 I added unit tests for parser and status logic.
 
 This prepares NeXa ToTem to report problems such as missing speaker, audio output problems, high temperature, undervoltage, or unknown Pi health state.
+
+## 2026-05-25 — Camera Diagnostics Foundation
+
+I added the first CSI camera diagnostics foundation.
+
+The camera check is designed to be fast by default so it does not slow down the NeXa ToTem system.
+
+The quick camera check detects available Raspberry Pi camera tools and checks whether a camera is visible.
+
+The capture validation is optional and only runs when requested.
+
+Camera status now uses the shared component status format.
+
+The combined system status now includes Raspberry Pi health, USB speaker/audio status, and CSI camera status.
+
+I added scripts for camera status and camera capture validation.
+
+I added unit tests for camera parser, command selection, camera status, capture validation, and combined system status.
+
+This prepares the future diagnostic panel to show camera state, camera errors, validation results, and saved reports.
