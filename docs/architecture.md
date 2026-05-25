@@ -71,3 +71,23 @@ I added scripts for camera status and camera capture validation.
 I added unit tests for camera parser, command selection, camera status, capture validation, and combined system status.
 
 This prepares the future diagnostic panel to show camera state, camera errors, validation results, and saved reports.
+
+## 2026-05-25 — Diagnostic Reports and Validation History Foundation
+
+I added report helpers for latest and history diagnostic reports.
+
+I added validation result helpers.
+
+I added a diagnostic panel data backend shape.
+
+The future diagnostic panel should read saved reports instead of running hardware checks every time.
+
+This keeps the system fast.
+
+I added a main `run_diagnostics.py` script.
+
+I added test runner scripts.
+
+I added README files explaining how the diagnostics and reports are organized.
+
+This prepares NeXa ToTem to show logs, statuses, reports, validation results, and test results in one diagnostic panel later.

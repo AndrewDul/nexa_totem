@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from system.devices.output.usb_speaker.speaker_status import collect_speaker_status
-from system.services.diagnostics.reports import write_json_report
+from system.services.diagnostics.reports import write_latest_report
 
 
 def write_test_tone(path, seconds=1, sample_rate=44100, frequency=880):
@@ -73,7 +73,7 @@ def main():
         status["details"]["test_sound_message"] = message
 
     if args.save_report:
-        write_json_report(status, REPO_ROOT / "var/reports/diagnostics/audio_output_latest.json")
+        write_latest_report("audio_output", status, report_root=REPO_ROOT / "var/reports/diagnostics")
 
     if args.json:
         print(json.dumps(status, indent=2, sort_keys=True))

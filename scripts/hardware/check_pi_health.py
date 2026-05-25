@@ -9,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from system.services.diagnostics.reports import write_json_report
+from system.services.diagnostics.reports import write_latest_report
 from system.services.system_health.pi_health import collect_pi_health
 
 
@@ -21,7 +21,7 @@ def main():
 
     status = collect_pi_health()
     if args.save_report:
-        write_json_report(status, REPO_ROOT / "var/reports/diagnostics/pi_health_latest.json")
+        write_latest_report("pi_health", status, report_root=REPO_ROOT / "var/reports/diagnostics")
 
     if args.json:
         print(json.dumps(status, indent=2, sort_keys=True))

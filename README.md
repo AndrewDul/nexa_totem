@@ -269,6 +269,18 @@ The current runtime foundation includes Raspberry Pi health checks, USB speaker/
 
 Camera diagnostics are designed to be fast by default. The quick check looks for Raspberry Pi camera tools and checks whether a CSI camera is visible. It does not take a photo unless capture validation is requested. The camera results are prepared for the future LCD UI, web panel, warnings, and diagnostic panel.
 
+## Diagnostic Reports and History
+
+NeXa ToTem saves diagnostic data only when a script is asked to save it.
+
+Latest reports are prepared for quick diagnostic panel loading.
+
+History reports are prepared for seeing what changed over time.
+
+Heavy validations, such as camera capture or audio test sound, are optional so normal runtime stays fast.
+
+The future diagnostic panel will read saved reports instead of running hardware checks every time it opens.
+
 ## Roadmap
 
 1. Inventory and measurements

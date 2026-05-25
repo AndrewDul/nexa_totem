@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from system.devices.output.usb_speaker.speaker_status import collect_speaker_status
 from system.devices.sensors.camera_csi.camera_status import collect_camera_status
 from system.services.diagnostics.collector import make_system_status
-from system.services.diagnostics.reports import write_json_report
+from system.services.diagnostics.reports import write_latest_report
 from system.services.logging.runtime_logger import setup_runtime_logger
 from system.services.system_health.pi_health import collect_pi_health
 
@@ -37,7 +37,7 @@ def main():
     status = collect_system_status()
     logger.info("Combined system status check finished with status %s.", status["status"])
     if args.save_report:
-        report_path = write_json_report(status, REPO_ROOT / "var/reports/diagnostics/system_status_latest.json")
+        report_path = write_latest_report("system_status", status, report_root=REPO_ROOT / "var/reports/diagnostics")
         logger.info("Saved combined system status report to %s.", report_path)
 
     if args.json:

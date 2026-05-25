@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from system.devices.sensors.camera_csi.camera_status import DEFAULT_CAPTURE_PATH, validate_camera_capture
-from system.services.diagnostics.reports import write_json_report
+from system.services.diagnostics.reports import write_latest_report
 from system.services.logging.runtime_logger import setup_runtime_logger
 
 
@@ -27,7 +27,7 @@ def main():
     logger.info("CSI camera capture validation finished with status %s.", status["status"])
 
     if args.save_report:
-        report_path = write_json_report(status, REPO_ROOT / "var/reports/diagnostics/camera_capture_latest.json")
+        report_path = write_latest_report("camera_capture", status, report_root=REPO_ROOT / "var/reports/diagnostics")
         logger.info("Saved CSI camera capture report to %s.", report_path)
 
     if args.json:
@@ -46,4 +46,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
