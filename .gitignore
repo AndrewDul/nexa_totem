@@ -65,6 +65,10 @@ var/data/
 *.sqlite3
 *.db
 
+# Godot generated files
+.godot/
+.import/
+
 # 3D printing generated files
 *.gcode
 *.3mf

@@ -111,3 +111,27 @@ I added saved report support for future diagnostic panel.
 I prepared Godot telemetry placeholders for FPS, frame time, and render data, but I did not fake GPU usage.
 
 GPU usage percent is reported as unsupported/unknown until there is a reliable measurement source.
+
+## 2026-05-25 — Godot LCD UI Prototype Foundation
+
+I started the first Godot UI prototype for the local NeXa ToTem screen.
+
+The target display is 640x480 touch.
+
+For this sprint, I use a fixed 640x480 window on the current HDMI monitor, not fullscreen.
+
+Fullscreen LCD mode will be added later after the 2.8-inch LCD is connected and tested.
+
+Face Home is the central screen.
+
+Swipe left opens Menu.
+
+Swipe right opens Clock.
+
+Swipe down opens Notification + Control Center.
+
+Diagnostics opens as a tabbed screen because there will be many data categories.
+
+Python remains the backend and Godot is the local visual UI layer.
+
+The UI must not run hardware checks directly; it should read saved reports or backend data later.

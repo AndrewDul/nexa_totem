@@ -293,6 +293,18 @@ The future diagnostic panel will read saved resource reports so it can load quic
 
 Heavy checks are avoided by default. Godot FPS and frame timing are prepared for future telemetry, and GPU usage stays unknown until there is a reliable measurement source.
 
+## Godot LCD UI Prototype
+
+Godot will be used for the local animated touch UI.
+
+The UI target is 640x480 for the planned 2.8-inch HDMI touch screen.
+
+The current development mode opens a fixed 640x480 window on the HDMI monitor. Fullscreen LCD mode is planned later and is not enabled yet.
+
+Python remains the backend. Godot will read view state and diagnostic data later.
+
+The first prototype contains Face Home, Menu, Clock, Notification Control Center, and Diagnostics tabs.
+
 ## Roadmap
 
 1. Inventory and measurements
