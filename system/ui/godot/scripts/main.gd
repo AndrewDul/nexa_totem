@@ -34,7 +34,8 @@ const DIAGNOSTIC_TABS := [
 	"Audio",
 	"Reports",
 	"Logs",
-	"Network"
+	"Network",
+	"Study Stats"
 ]
 const SETTINGS_TILES := [
 	{"icon": "◐", "title": "Appearance", "subtitle": "Theme"},
@@ -54,7 +55,16 @@ const SETTINGS_TILES := [
 const COLOR_OPTIONS := ["Blue", "Sky Blue", "Cyan", "White", "Warm White", "Yellow", "Orange", "Red", "Pink", "Purple", "Green", "Mint", "Brown", "Gold", "Grey", "Graphite", "Black"]
 const PRESET_OPTIONS := ["NeXa Blue", "Apple Dark", "Warm Desk", "Focus Green", "Night Red", "Soft Pink", "Minimal White"]
 const MODE_OPTIONS := ["Normal", "Quiet", "Focus", "Night", "Away", "Demo", "Maintenance"]
-const QUICK_SHELF_OPTIONS := ["Clock", "Calendar", "Reminders", "Tasks", "Study", "Pomodoro", "Games", "Diagnostics", "Network", "Camera", "Air Quality", "Temperature", "Brightness", "Sound", "Quiet Mode", "Remote", "Settings", "LED", "Logs", "Reports", "Exit NeXa"]
+const QUICK_SHELF_OPTIONS := ["Clock", "Calendar", "Reminders", "Tasks", "Study", "Study Stats", "Games", "Diagnostics", "Network", "Camera", "Air Quality", "Temperature", "Brightness", "Sound", "Quiet Mode", "Remote", "Settings", "LED", "Logs", "Reports", "Exit NeXa"]
+const STUDY_TILES := [
+	{"title": "Smart Study", "subtitle": "Segments"},
+	{"title": "Flashcards", "subtitle": "Sets"},
+	{"title": "Quizzes", "subtitle": "Questions"},
+	{"title": "Languages", "subtitle": "Words"},
+	{"title": "Study Stats", "subtitle": "Progress"},
+	{"title": "History", "subtitle": "Events"},
+	{"title": "Settings", "subtitle": "Database"}
+]
 
 var nav := NavigationControllerScript.new()
 var gesture := GestureDetectorScript.new()
@@ -111,6 +121,63 @@ var settings_dropdown_section := ""
 var settings_dropdown_key := ""
 var quick_shelf_scroll_y := 0.0
 var quick_shelf_status_text := ""
+var study_current_page := "home"
+var study_scroll_y := 0.0
+var study_data := {}
+var study_status_text := "No study data yet"
+var study_selected_deck_id := 0
+var study_selected_quiz_id := 0
+var study_selected_language_list_id := 0
+var study_selected_card := {}
+var study_selected_question := {}
+var study_selected_word := {}
+var study_topic_text := ""
+var study_goal_text := ""
+var study_note_text := ""
+var study_planned_minutes := 25
+var study_break_minutes := 5
+var study_smart_minutes := 45
+var study_smart_break_count := 1
+var study_smart_break_minutes := 5
+var study_segments: Array = [{"type": "focus", "minutes": 5}]
+var study_selected_segment_index := 0
+var study_segment_scroll_y := 0.0
+var study_active_smart_session_id := 0
+var study_delete_confirm_open := false
+var study_flashcard_mode := "list"
+var study_flashcard_answer_text := ""
+var study_flashcard_revealed_answer := false
+var study_flashcard_answer_checked := false
+var study_flashcard_feedback_text := ""
+var study_flashcard_delete_confirm_open := false
+var study_quiz_mode := "list"
+var study_quiz_answered := false
+var study_quiz_feedback_text := ""
+var study_quiz_delete_confirm_open := false
+var study_pending_correct_answer := "A"
+var study_language_mode := "list"
+var study_language_answer_text := ""
+var study_language_answer_checked := false
+var study_language_revealed_word := false
+var study_language_feedback_text := ""
+var study_language_delete_confirm_open := false
+var study_selected_language_word_id := 0
+var study_pending_question := ""
+var study_pending_answer := ""
+var study_pending_quiz_question := ""
+var study_pending_answer_a := ""
+var study_pending_answer_b := ""
+var study_pending_answer_c := ""
+var study_pending_answer_d := ""
+var study_pending_language_word := ""
+var study_pending_language_pronunciation := ""
+var text_input_open := false
+var text_input_title := ""
+var text_input_value := ""
+var text_input_target := ""
+var text_input_context := {}
+var study_timer_data := {}
+var study_timer_poll_accumulator := 0.0
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDTH, HEIGHT)
@@ -206,6 +273,21 @@ func _gui_input(event: InputEvent) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.pressed:
 		return
+	if text_input_open:
+		# InputEventKey handling keeps physical keyboard input active while the on-screen keyboard remains visible.
+		if event.keycode == KEY_BACKSPACE:
+			if text_input_value.length() > 0:
+				text_input_value = text_input_value.substr(0, text_input_value.length() - 1)
+		elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+			_commit_text_input()
+		elif event.keycode == KEY_ESCAPE:
+			_close_text_input()
+		elif event.keycode == KEY_SPACE:
+			text_input_value += " "
+		elif event.unicode > 0:
+			text_input_value += char(event.unicode)
+		_request_redraw()
+		return
 	if event.keycode == KEY_LEFT and nav.current_screen == "Face Home":
 		_open_menu()
 	elif event.keycode == KEY_RIGHT and nav.current_screen == "Face Home":
@@ -213,6 +295,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif event.keycode == KEY_DOWN and nav.current_screen == "Face Home":
 		_open_control_center()
 	elif event.keycode == KEY_ESCAPE:
+		if text_input_open:
+			_close_text_input()
+			_request_redraw()
+			return
+		if nav.current_screen == "Study" and study_current_page != "home":
+			_open_study_page("home")
+			return
 		if nav.current_screen == "Settings" and settings_dropdown_open:
 			_close_settings_dropdown()
 			_request_redraw()
@@ -247,9 +336,14 @@ func _handle_gesture(action: String, position: Vector2) -> void:
 		_go_home()
 	elif nav.current_screen == "Quick Shelf" and action == "swipe_down":
 		_go_home()
+	elif nav.current_screen == "Study" and study_current_page == "home" and (action == "swipe_right" or action == "swipe_down"):
+		_go_home()
 	_request_redraw()
 
 func _handle_tap(position: Vector2) -> void:
+	if text_input_open:
+		_handle_text_input_tap(position)
+		return
 	if transition_active:
 		return
 	if nav.current_screen == "Face Home":
@@ -273,6 +367,10 @@ func _handle_tap(position: Vector2) -> void:
 		return
 	if nav.current_screen == "Quick Shelf":
 		_handle_quick_shelf_panel_tap(position)
+		return
+	if nav.current_screen == "Study":
+		_handle_study_tap(position)
+		return
 
 func _handle_menu_tap(position: Vector2) -> void:
 	for index in range(MENU_TILES.size()):
@@ -281,6 +379,8 @@ func _handle_menu_tap(position: Vector2) -> void:
 			var tile: Dictionary = MENU_TILES[index] as Dictionary
 			if tile["title"] == "Time":
 				_open_clock()
+			elif tile["title"] == "Study":
+				_open_study("home")
 			elif tile["title"] == "Diagnostics":
 				_open_diagnostics()
 			elif tile["title"] == "Settings":
@@ -415,6 +515,12 @@ func _activate_quick_shelf_tile(tile_name: String) -> void:
 	elif tile_name == "Reports":
 		quick_shelf_status_text = "Opening Reports"
 		_open_diagnostics_tab("Reports")
+	elif tile_name == "Study":
+		quick_shelf_status_text = "Opening Study"
+		_open_study("home")
+	elif tile_name == "Study Stats":
+		quick_shelf_status_text = "Opening Study Stats"
+		_open_study("stats")
 	elif tile_name == "Quiet Mode":
 		quiet_mode_local = not quiet_mode_local
 		control_center_data["quiet_mode"] = quiet_mode_local
@@ -456,6 +562,457 @@ func _handle_quick_shelf_tap(position: Vector2) -> void:
 				enabled.append(name)
 			_settings_update("quick_shelf", "enabled_tiles", enabled)
 			return
+
+func _handle_study_tap(position: Vector2) -> void:
+	if Rect2(520, 22, 92, 34).has_point(position):
+		if study_current_page == "home":
+			_go_home()
+		else:
+			_open_study_page("home")
+		return
+	if study_current_page == "home":
+		for index in range(STUDY_TILES.size()):
+			var rect: Rect2 = _study_tile_rect(index)
+			if rect.has_point(position):
+				var title: String = str((STUDY_TILES[index] as Dictionary)["title"])
+				_open_study_page(_study_page_id(title))
+				return
+	if study_current_page == "pomodoro":
+		_handle_study_pomodoro_tap(position)
+	elif study_current_page == "smart_study":
+		_handle_study_smart_tap(position)
+	elif study_current_page == "flashcards":
+		_handle_study_flashcards_tap(position)
+	elif study_current_page == "quizzes":
+		_handle_study_quizzes_tap(position)
+	elif study_current_page == "languages":
+		_handle_study_languages_tap(position)
+	elif study_current_page == "settings":
+		_handle_study_settings_tap(position)
+
+func _study_page_id(title: String) -> String:
+	return title.to_lower().replace(" ", "_")
+
+func _open_study_page(page: String) -> void:
+	study_current_page = page
+	study_scroll_y = 0.0
+	_request_study_page_data()
+	_request_redraw()
+
+func _handle_study_pomodoro_tap(position: Vector2) -> void:
+	if Rect2(44, 118, 552, 38).has_point(position):
+		_open_text_input("Pomodoro topic", study_topic_text, "study_topic", {})
+	elif Rect2(44, 166, 120, 34).has_point(position):
+		study_planned_minutes = max(5, study_planned_minutes - 5)
+		_request_redraw()
+	elif Rect2(176, 166, 120, 34).has_point(position):
+		study_planned_minutes = min(240, study_planned_minutes + 5)
+		_request_redraw()
+	elif Rect2(308, 166, 120, 34).has_point(position):
+		study_break_minutes = 0 if study_break_minutes != 0 else 5
+		_request_redraw()
+	elif Rect2(44, 216, 260, 42).has_point(position):
+		if study_topic_text.strip_edges() == "":
+			study_status_text = "Type a topic first"
+		else:
+			api.request_post("/api/study/pomodoro/start", {"topic": study_topic_text, "planned_minutes": study_planned_minutes, "break_minutes": study_break_minutes})
+	elif Rect2(324, 216, 260, 42).has_point(position):
+		api.request_post("/api/study/timer/stop")
+
+func _handle_study_smart_tap(position: Vector2) -> void:
+	if Rect2(44, 118, 350, 36).has_point(position):
+		_open_text_input("Smart topic", study_topic_text, "study_topic", {})
+	elif Rect2(44, 164, 350, 36).has_point(position):
+		_open_text_input("Study goal", study_goal_text, "study_goal", {})
+	elif Rect2(420, 118, 170, 32).has_point(position):
+		if not study_segments.is_empty() and str((study_segments[study_segments.size() - 1] as Dictionary).get("type", "focus")) == "focus":
+			study_status_text = "After focus, add a break."
+			_request_redraw()
+			return
+		study_segments.append({"type": "focus", "minutes": 5})
+		study_selected_segment_index = study_segments.size() - 1
+	elif Rect2(420, 156, 170, 32).has_point(position):
+		if not study_segments.is_empty() and str((study_segments[study_segments.size() - 1] as Dictionary).get("type", "focus")) == "break":
+			study_status_text = "After break, add focus."
+			_request_redraw()
+			return
+		study_segments.append({"type": "break", "minutes": 5})
+		study_selected_segment_index = study_segments.size() - 1
+	elif Rect2(420, 194, 170, 32).has_point(position) and study_segments.size() > 1:
+		study_segments.remove_at(study_segments.size() - 1)
+		study_selected_segment_index = mini(study_selected_segment_index, study_segments.size() - 1)
+	elif Rect2(420, 232, 80, 32).has_point(position):
+		_study_adjust_selected_segment(-5)
+	elif Rect2(510, 232, 80, 32).has_point(position):
+		_study_adjust_selected_segment(5)
+	elif Rect2(420, 274, 170, 34).has_point(position) and not bool(study_timer_data.get("active", false)):
+		var validation := _validate_study_segments()
+		if validation != "":
+			study_status_text = validation
+		else:
+			api.request_post("/api/study/smart/start", {"topic": study_topic_text, "goal": study_goal_text, "segments": study_segments})
+	elif bool(study_timer_data.get("note_prompt_pending", false)) and Rect2(424, 334, 76, 30).has_point(position):
+		_open_text_input("What did you learn?", study_note_text, "study_smart_note", {})
+	elif bool(study_timer_data.get("note_prompt_pending", false)) and Rect2(510, 334, 76, 30).has_point(position):
+		api.request_post("/api/study/smart/skip-note", {"session_id": study_active_smart_session_id})
+	elif bool(study_timer_data.get("active", false)) and Rect2(424, 374, 76, 28).has_point(position):
+		api.request_post("/api/study/smart/stop", {"session_id": study_active_smart_session_id})
+	elif bool(study_timer_data.get("active", false)) and Rect2(510, 374, 76, 28).has_point(position):
+		api.request_post("/api/study/smart/finish", {"session_id": study_active_smart_session_id})
+	for index in range(study_segments.size()):
+		var rect: Rect2 = _study_segment_row_rect(index)
+		if rect.has_point(position):
+			study_selected_segment_index = index
+			_request_redraw()
+			return
+
+func _study_current_segment_is_break() -> bool:
+	return bool(study_timer_data.get("active", false)) and str(study_timer_data.get("kind", "focus")) == "break"
+
+func _study_current_segment_is_focus() -> bool:
+	return bool(study_timer_data.get("active", false)) and str(study_timer_data.get("kind", "focus")) == "focus"
+
+func _study_segment_row_rect(index: int) -> Rect2:
+	return Rect2(56, 220 + float(index) * 30.0 - study_segment_scroll_y, 316, 24)
+
+func _study_adjust_selected_segment(delta_minutes: int) -> void:
+	if study_selected_segment_index < 0 or study_selected_segment_index >= study_segments.size():
+		return
+	var segment: Dictionary = study_segments[study_selected_segment_index] as Dictionary
+	segment["minutes"] = max(5, int(segment.get("minutes", 5)) + delta_minutes)
+	study_segments[study_selected_segment_index] = segment
+	_request_redraw()
+
+func _validate_study_segments() -> String:
+	if study_topic_text.strip_edges() == "":
+		return "Empty topic/title is invalid."
+	if study_segments.is_empty():
+		return "Add at least one focus segment."
+	for index in range(study_segments.size()):
+		var segment: Dictionary = study_segments[index] as Dictionary
+		var kind := str(segment.get("type", "focus"))
+		var minutes := int(segment.get("minutes", 0))
+		if kind == "focus" and minutes < 5:
+			return "Focus part cannot be shorter than 5 minutes."
+		if kind == "break":
+			if minutes < 5:
+				return "Break cannot be shorter than 5 minutes."
+			if index == 0 or index == study_segments.size() - 1:
+				return "If there is a break, there must be focus before and after it."
+		if index > 0:
+			var previous: Dictionary = study_segments[index - 1] as Dictionary
+			if str(previous.get("type", "focus")) == kind:
+				return "Segments must alternate focus and break."
+	return ""
+
+func _handle_study_flashcards_tap(position: Vector2) -> void:
+	if study_flashcard_delete_confirm_open:
+		if Rect2(78, 354, 210, 42).has_point(position):
+			study_flashcard_delete_confirm_open = false
+			study_status_text = "Delete cancelled"
+		elif Rect2(352, 354, 210, 42).has_point(position) and study_selected_deck_id > 0:
+			study_flashcard_delete_confirm_open = false
+			api.request_post("/api/study/settings/delete", {"action": "delete_deck", "target_id": study_selected_deck_id, "confirm_text": "DELETE_DECK"})
+			study_selected_deck_id = 0
+			study_flashcard_mode = "list"
+		_request_redraw()
+		return
+	if Rect2(44, 118, 170, 38).has_point(position):
+		_open_text_input("New Flashcards", "", "study_create_deck", {})
+	elif Rect2(232, 118, 170, 38).has_point(position) and study_selected_deck_id <= 0:
+		study_status_text = "Select one flashcard set first."
+	elif Rect2(232, 118, 170, 38).has_point(position):
+		_open_text_input("Card question", "", "study_card_question", {})
+	elif Rect2(420, 118, 170, 38).has_point(position) and study_selected_deck_id <= 0:
+		study_status_text = "Select one flashcard set first."
+	elif Rect2(420, 118, 170, 38).has_point(position):
+		study_flashcard_mode = "practice"
+		study_flashcard_answer_text = ""
+		study_flashcard_revealed_answer = false
+		study_flashcard_answer_checked = false
+		study_flashcard_feedback_text = ""
+		api.request_get("/api/study/flashcards/review/start?deck_id=" + str(study_selected_deck_id) + "&mode=all")
+	elif Rect2(44, 164, 170, 34).has_point(position) and study_selected_deck_id <= 0:
+		study_status_text = "Select one flashcard set first."
+	elif Rect2(44, 164, 170, 34).has_point(position):
+		study_flashcard_delete_confirm_open = true
+	elif Rect2(44, 278, 170, 30).has_point(position) and study_flashcard_mode == "practice" and study_selected_card.has("id"):
+		_open_text_input("Your answer", study_flashcard_answer_text, "study_flashcard_answer_input", {})
+	elif Rect2(232, 278, 170, 30).has_point(position) and study_flashcard_mode == "practice" and study_selected_card.has("id"):
+		_check_flashcard_answer()
+	elif Rect2(420, 278, 170, 30).has_point(position) and study_flashcard_mode == "practice" and study_selected_card.has("id"):
+		study_flashcard_revealed_answer = true
+		study_flashcard_answer_checked = true
+		study_flashcard_feedback_text = "Answer: " + str(study_selected_card.get("answer", ""))
+	elif Rect2(44, 316, 160, 30).has_point(position) and study_flashcard_mode == "practice" and study_selected_card.has("id"):
+		_submit_flashcard_review("know")
+	elif Rect2(220, 316, 160, 30).has_point(position) and study_flashcard_mode == "practice" and study_selected_card.has("id"):
+		_submit_flashcard_review("unsure")
+	elif Rect2(396, 316, 160, 30).has_point(position) and study_flashcard_mode == "practice" and study_selected_card.has("id"):
+		_submit_flashcard_review("dont_know")
+	elif Rect2(44, 354, 170, 30).has_point(position) and study_flashcard_mode == "practice" and study_selected_card.has("id"):
+		study_flashcard_answer_checked = false
+		study_flashcard_revealed_answer = false
+		study_flashcard_answer_text = ""
+		study_flashcard_feedback_text = ""
+		api.request_get("/api/study/flashcards/review/next?deck_id=" + str(study_selected_deck_id))
+	elif Rect2(232, 354, 170, 30).has_point(position) and study_flashcard_mode == "practice":
+		study_flashcard_mode = "detail"
+		study_selected_card = {}
+		api.request_get("/api/study/flashcards/deck?deck_id=" + str(study_selected_deck_id))
+	elif Rect2(44, 390, 170, 34).has_point(position) and study_flashcard_mode == "finished":
+		study_flashcard_mode = "detail"
+	elif Rect2(232, 390, 170, 34).has_point(position) and study_flashcard_mode == "finished":
+		study_flashcard_mode = "practice"
+		api.request_get("/api/study/flashcards/review/start?deck_id=" + str(study_selected_deck_id) + "&mode=all")
+	for index in range(_study_list_count("decks")):
+		var rect: Rect2 = _study_list_rect(index)
+		if rect.has_point(position):
+			var decks_raw: Array = study_data.get("decks", [])
+			var item: Dictionary = decks_raw[index] as Dictionary
+			study_selected_deck_id = int(item.get("id", 0))
+			study_flashcard_mode = "detail"
+			api.request_get("/api/study/flashcards/deck?deck_id=" + str(study_selected_deck_id))
+			_request_redraw()
+			return
+	for index in range(_study_list_count("cards")):
+		var card_rect: Rect2 = _study_list_rect(index)
+		if card_rect.has_point(position):
+			var cards_raw: Array = study_data.get("cards", [])
+			study_selected_card = cards_raw[index] as Dictionary
+			study_status_text = "Edit question / Delete question planned"
+			_request_redraw()
+			return
+
+func _submit_flashcard_review(confidence: String) -> void:
+	if not study_flashcard_answer_checked and not study_flashcard_revealed_answer:
+		study_status_text = "Type your answer and check it, or reveal the card first."
+		_request_redraw()
+		return
+	api.request_post("/api/study/flashcards/review", {"card_id": study_selected_card.get("id", 0), "typed_answer": study_flashcard_answer_text, "confidence": confidence, "revealed_answer": study_flashcard_revealed_answer})
+	study_flashcard_answer_text = ""
+	study_flashcard_revealed_answer = false
+	study_flashcard_answer_checked = false
+
+func _check_flashcard_answer() -> void:
+	var typed := study_flashcard_answer_text.strip_edges().to_lower()
+	var expected := str(study_selected_card.get("answer", "")).strip_edges().to_lower()
+	study_flashcard_answer_checked = true
+	if typed != "" and typed == expected:
+		study_flashcard_feedback_text = "Correct"
+	else:
+		study_flashcard_revealed_answer = true
+		study_flashcard_feedback_text = "Wrong. Correct answer: " + str(study_selected_card.get("answer", ""))
+	_request_redraw()
+
+func _check_language_answer() -> void:
+	var typed := study_language_answer_text.strip_edges().to_lower()
+	var expected := str(study_selected_word.get("meaning", "")).strip_edges().to_lower()
+	study_language_answer_checked = true
+	if typed != "" and typed == expected:
+		study_language_feedback_text = "Correct"
+		api.request_post("/api/study/languages/review", {"word_id": study_selected_word.get("id", 0), "result": "correct"})
+	else:
+		study_language_revealed_word = true
+		study_language_feedback_text = "Wrong. Correct meaning: " + str(study_selected_word.get("meaning", ""))
+		api.request_post("/api/study/languages/review", {"word_id": study_selected_word.get("id", 0), "result": "wrong"})
+	_request_redraw()
+
+func _handle_study_quizzes_tap(position: Vector2) -> void:
+	if study_quiz_delete_confirm_open:
+		if Rect2(78, 354, 210, 42).has_point(position):
+			study_quiz_delete_confirm_open = false
+			study_status_text = "Delete cancelled"
+		elif Rect2(352, 354, 210, 42).has_point(position) and study_selected_quiz_id > 0:
+			study_quiz_delete_confirm_open = false
+			api.request_post("/api/study/settings/delete", {"action": "delete_quiz", "target_id": study_selected_quiz_id, "confirm_text": "DELETE_QUIZ"})
+			study_selected_quiz_id = 0
+			study_quiz_mode = "list"
+		_request_redraw()
+		return
+	if Rect2(44, 118, 170, 38).has_point(position):
+		_open_text_input("Quiz name", "", "study_create_quiz", {})
+	elif Rect2(232, 118, 170, 38).has_point(position) and study_selected_quiz_id <= 0:
+		study_status_text = "Select one quiz first."
+	elif Rect2(232, 118, 170, 38).has_point(position):
+		_open_text_input("Quiz question", "", "study_quiz_question", {})
+	elif Rect2(420, 118, 170, 38).has_point(position) and study_selected_quiz_id <= 0:
+		study_status_text = "Select one quiz first."
+	elif Rect2(420, 118, 170, 38).has_point(position):
+		study_quiz_mode = "play"
+		study_quiz_answered = false
+		study_quiz_feedback_text = ""
+		api.request_get("/api/study/quizzes/question/next?quiz_id=" + str(study_selected_quiz_id))
+	elif Rect2(44, 164, 170, 34).has_point(position) and study_pending_quiz_question == "" and study_selected_quiz_id <= 0:
+		study_status_text = "Select one quiz first."
+	elif Rect2(44, 164, 170, 34).has_point(position) and study_pending_quiz_question == "":
+		study_quiz_delete_confirm_open = true
+	elif Rect2(44, 174, 56, 32).has_point(position):
+		study_pending_correct_answer = "A"
+	elif Rect2(108, 174, 56, 32).has_point(position):
+		study_pending_correct_answer = "B"
+	elif Rect2(172, 174, 56, 32).has_point(position):
+		study_pending_correct_answer = "C"
+	elif Rect2(236, 174, 56, 32).has_point(position):
+		study_pending_correct_answer = "D"
+	elif Rect2(308, 174, 142, 32).has_point(position) and study_pending_quiz_question != "":
+		api.request_post("/api/study/quizzes/questions/create", {"quiz_id": study_selected_quiz_id, "question": study_pending_quiz_question, "answer_a": study_pending_answer_a, "answer_b": study_pending_answer_b, "answer_c": study_pending_answer_c, "answer_d": study_pending_answer_d, "correct_answer": study_pending_correct_answer})
+	elif Rect2(44, 238, 260, 32).has_point(position) and study_quiz_mode == "play" and study_selected_question.has("id"):
+		_submit_quiz_answer("A")
+	elif Rect2(324, 238, 260, 32).has_point(position) and study_quiz_mode == "play" and study_selected_question.has("id"):
+		_submit_quiz_answer("B")
+	elif Rect2(44, 276, 260, 32).has_point(position) and study_quiz_mode == "play" and study_selected_question.has("id"):
+		_submit_quiz_answer("C")
+	elif Rect2(324, 276, 260, 32).has_point(position) and study_quiz_mode == "play" and study_selected_question.has("id"):
+		_submit_quiz_answer("D")
+	elif Rect2(44, 354, 170, 30).has_point(position) and study_quiz_mode == "play" and study_selected_question.has("id"):
+		api.request_post("/api/study/quizzes/mark-review", {"question_id": study_selected_question.get("id", 0)})
+	elif Rect2(232, 354, 170, 30).has_point(position) and study_quiz_mode == "play" and study_quiz_answered:
+		study_quiz_answered = false
+		api.request_get("/api/study/quizzes/question/next?quiz_id=" + str(study_selected_quiz_id))
+	elif Rect2(420, 354, 170, 30).has_point(position) and study_quiz_mode == "play":
+		study_quiz_mode = "detail"
+		study_selected_question = {}
+		api.request_get("/api/study/quizzes/quiz?quiz_id=" + str(study_selected_quiz_id))
+	elif Rect2(44, 390, 170, 30).has_point(position) and study_quiz_mode == "finished":
+		study_quiz_mode = "detail"
+	elif Rect2(232, 390, 170, 30).has_point(position) and study_quiz_mode == "finished":
+		study_quiz_answered = false
+		api.request_get("/api/study/quizzes/question/next?quiz_id=" + str(study_selected_quiz_id) + "&mode=wrong")
+	elif Rect2(420, 390, 170, 30).has_point(position) and study_quiz_mode == "finished":
+		study_quiz_answered = false
+		api.request_get("/api/study/quizzes/question/next?quiz_id=" + str(study_selected_quiz_id) + "&mode=marked")
+	for index in range(_study_list_count("quizzes")):
+		var rect: Rect2 = _study_list_rect(index)
+		if rect.has_point(position):
+			var quizzes_raw: Array = study_data.get("quizzes", [])
+			var item: Dictionary = quizzes_raw[index] as Dictionary
+			study_selected_quiz_id = int(item.get("id", 0))
+			study_quiz_mode = "detail"
+			api.request_get("/api/study/quizzes/quiz?quiz_id=" + str(study_selected_quiz_id))
+			_request_redraw()
+			return
+	for index in range(_study_list_count("questions")):
+		var question_rect: Rect2 = _study_list_rect(index)
+		if question_rect.has_point(position):
+			var questions_raw: Array = study_data.get("questions", [])
+			study_selected_question = questions_raw[index] as Dictionary
+			study_status_text = "Edit question / Delete question planned"
+			_request_redraw()
+			return
+
+func _submit_quiz_answer(choice: String) -> void:
+	api.request_post("/api/study/quizzes/answer", {"question_id": study_selected_question.get("id", 0), "answer": choice})
+	study_quiz_answered = true
+
+func _handle_study_languages_tap(position: Vector2) -> void:
+	if study_language_delete_confirm_open:
+		if Rect2(78, 354, 210, 42).has_point(position):
+			study_language_delete_confirm_open = false
+			study_status_text = "Delete cancelled"
+		elif Rect2(352, 354, 210, 42).has_point(position) and study_selected_language_list_id > 0:
+			study_language_delete_confirm_open = false
+			api.request_post("/api/study/settings/delete", {"action": "delete_language_list", "target_id": study_selected_language_list_id, "confirm_text": "DELETE_LANGUAGE_LIST"})
+			study_selected_language_list_id = 0
+			study_language_mode = "list"
+		_request_redraw()
+		return
+	if Rect2(44, 118, 170, 38).has_point(position):
+		_open_text_input("Word list name", "", "study_create_language_list", {})
+	elif Rect2(232, 118, 170, 38).has_point(position) and study_selected_language_list_id <= 0:
+		study_status_text = "Select one language list first."
+	elif Rect2(232, 118, 170, 38).has_point(position):
+		_open_text_input("Word", "", "study_language_word", {})
+	elif Rect2(420, 118, 170, 38).has_point(position) and study_selected_language_list_id <= 0:
+		study_status_text = "Select one language list first."
+	elif Rect2(420, 118, 170, 38).has_point(position):
+		study_language_mode = "edit"
+		api.request_get("/api/study/languages/list?list_id=" + str(study_selected_language_list_id))
+	elif Rect2(44, 164, 170, 34).has_point(position) and study_selected_language_list_id <= 0:
+		study_status_text = "Select one language list first."
+	elif Rect2(44, 164, 170, 34).has_point(position):
+		study_language_mode = "practice"
+		study_language_answer_text = ""
+		study_language_answer_checked = false
+		study_language_revealed_word = false
+		study_language_feedback_text = ""
+		api.request_get("/api/study/languages/practice/next?list_id=" + str(study_selected_language_list_id))
+	elif Rect2(232, 164, 170, 34).has_point(position) and study_selected_language_list_id <= 0:
+		study_status_text = "Select one language list first."
+	elif Rect2(232, 164, 170, 34).has_point(position):
+		study_language_delete_confirm_open = true
+	elif Rect2(44, 278, 170, 30).has_point(position) and study_language_mode == "practice" and study_selected_word.has("id"):
+		_open_text_input("Meaning", study_language_answer_text, "study_language_answer_input", {})
+	elif Rect2(232, 278, 170, 30).has_point(position) and study_language_mode == "practice" and study_selected_word.has("id"):
+		_check_language_answer()
+	elif Rect2(420, 278, 170, 30).has_point(position) and study_language_mode == "practice" and study_selected_word.has("id"):
+		study_language_revealed_word = true
+		study_language_answer_checked = true
+		study_language_feedback_text = "Correct meaning: " + str(study_selected_word.get("meaning", ""))
+	elif Rect2(44, 316, 170, 30).has_point(position) and study_language_mode == "practice" and study_selected_word.has("id"):
+		api.request_post("/api/study/languages/review", {"word_id": study_selected_word.get("id", 0), "result": "correct"})
+		study_language_feedback_text = "Correct"
+	elif Rect2(232, 316, 170, 30).has_point(position) and study_language_mode == "practice" and study_selected_word.has("id"):
+		api.request_post("/api/study/languages/review", {"word_id": study_selected_word.get("id", 0), "result": "wrong"})
+		study_language_feedback_text = "Wrong. Correct meaning: " + str(study_selected_word.get("meaning", ""))
+	elif Rect2(44, 354, 170, 30).has_point(position) and study_language_mode == "practice":
+		study_language_answer_text = ""
+		study_language_answer_checked = false
+		study_language_revealed_word = false
+		api.request_get("/api/study/languages/practice/next?list_id=" + str(study_selected_language_list_id))
+	elif Rect2(232, 354, 170, 30).has_point(position) and study_language_mode == "practice":
+		study_language_mode = "list"
+		api.request_get("/api/study/languages/lists")
+	elif Rect2(44, 390, 170, 30).has_point(position) and study_language_mode == "finished":
+		study_language_mode = "list"
+		api.request_get("/api/study/languages/lists")
+	elif Rect2(44, 390, 170, 30).has_point(position) and study_language_mode == "edit":
+		_open_text_input("Word", "", "study_language_word", {})
+	elif Rect2(232, 390, 170, 30).has_point(position) and study_language_mode == "edit" and study_selected_language_word_id > 0:
+		api.request_post("/api/study/languages/words/delete", {"word_id": study_selected_language_word_id})
+	elif Rect2(420, 390, 170, 30).has_point(position) and study_language_mode == "edit":
+		study_language_mode = "list"
+		api.request_get("/api/study/languages/lists")
+	for index in range(_study_list_count("lists")):
+		var rect: Rect2 = _study_list_rect(index)
+		if rect.has_point(position):
+			var lists_raw: Array = study_data.get("lists", [])
+			var item: Dictionary = lists_raw[index] as Dictionary
+			study_selected_language_list_id = int(item.get("id", 0))
+			study_language_mode = "list"
+			_request_redraw()
+			return
+	for index in range(_study_list_count("words")):
+		var word_rect: Rect2 = _study_list_rect(index)
+		if word_rect.has_point(position):
+			var words_raw: Array = study_data.get("words", [])
+			var word_item: Dictionary = words_raw[index] as Dictionary
+			study_selected_language_word_id = int(word_item.get("id", 0))
+			study_selected_word = word_item
+			_request_redraw()
+			return
+
+func _handle_study_settings_tap(position: Vector2) -> void:
+	if study_delete_confirm_open:
+		if Rect2(78, 354, 210, 42).has_point(position):
+			study_delete_confirm_open = false
+			study_status_text = "Delete cancelled"
+		elif Rect2(352, 354, 210, 42).has_point(position):
+			study_delete_confirm_open = false
+			api.request_post("/api/study/settings/delete", {"action": "delete_all_study_data", "confirm_text": "DELETE_STUDY_DATA"})
+		_request_redraw()
+		return
+	if Rect2(44, 390, 260, 42).has_point(position):
+		study_delete_confirm_open = true
+		study_status_text = "Confirm delete to continue"
+	elif Rect2(324, 390, 260, 42).has_point(position):
+		study_status_text = "Use Delete all first"
+
+func _study_list_count(key: String) -> int:
+	var raw = study_data.get(key, [])
+	if raw is Array:
+		return raw.size()
+	return 0
 
 func _handle_pin_tap(position: Vector2) -> void:
 	if Rect2(44, 114 - settings_scroll_y, 264, 38).has_point(position):
@@ -500,6 +1057,102 @@ func _pin_submit() -> void:
 	else:
 		api.request_post("/api/privacy/pin/verify", {"pin": pin_input})
 	pin_input = ""
+
+func _open_text_input(title: String, value: String, target: String, context: Dictionary) -> void:
+	text_input_open = true
+	text_input_title = title
+	text_input_value = value
+	text_input_target = target
+	text_input_context = context
+	_request_redraw()
+
+func _close_text_input() -> void:
+	text_input_open = false
+	text_input_title = ""
+	text_input_value = ""
+	text_input_target = ""
+	text_input_context = {}
+
+func _handle_text_input_tap(position: Vector2) -> void:
+	if Rect2(412, 386, 82, 34).has_point(position):
+		_commit_text_input()
+		return
+	if Rect2(504, 386, 82, 34).has_point(position):
+		_close_text_input()
+		_request_redraw()
+		return
+	if Rect2(40, 386, 96, 34).has_point(position):
+		text_input_value += " "
+		_request_redraw()
+		return
+	if Rect2(146, 386, 96, 34).has_point(position):
+		if text_input_value.length() > 0:
+			text_input_value = text_input_value.substr(0, text_input_value.length() - 1)
+		_request_redraw()
+		return
+	if Rect2(252, 386, 96, 34).has_point(position):
+		text_input_value = ""
+		_request_redraw()
+		return
+	var keys := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?!-/:"
+	for index in range(keys.length()):
+		var rect: Rect2 = _text_key_rect(index)
+		if rect.has_point(position):
+			text_input_value += keys.substr(index, 1)
+			_request_redraw()
+			return
+
+func _commit_text_input() -> void:
+	var value: String = text_input_value.strip_edges()
+	var target := text_input_target
+	_close_text_input()
+	if target == "study_topic":
+		study_topic_text = value
+	elif target == "study_goal":
+		study_goal_text = value
+	elif target == "study_smart_note":
+		study_note_text = value
+		api.request_post("/api/study/smart/note", {"session_id": study_active_smart_session_id, "note_text": value})
+	elif target == "study_create_deck":
+		api.request_post("/api/study/flashcards/decks/create", {"name": value})
+	elif target == "study_card_question":
+		study_pending_question = value
+		_open_text_input("Card answer", "", "study_card_answer", {})
+	elif target == "study_card_answer":
+		study_pending_answer = value
+		api.request_post("/api/study/flashcards/cards/create", {"deck_id": study_selected_deck_id, "question": study_pending_question, "answer": study_pending_answer})
+	elif target == "study_flashcard_answer_input":
+		study_flashcard_answer_text = value
+	elif target == "study_language_answer_input":
+		study_language_answer_text = value
+	elif target == "study_create_quiz":
+		api.request_post("/api/study/quizzes/create", {"name": value})
+	elif target == "study_quiz_question":
+		study_pending_quiz_question = value
+		_open_text_input("Answer A", "", "study_quiz_answer_a", {})
+	elif target == "study_quiz_answer_a":
+		study_pending_answer_a = value
+		_open_text_input("Answer B", "", "study_quiz_answer_b", {})
+	elif target == "study_quiz_answer_b":
+		study_pending_answer_b = value
+		_open_text_input("Answer C", "", "study_quiz_answer_c", {})
+	elif target == "study_quiz_answer_c":
+		study_pending_answer_c = value
+		_open_text_input("Answer D", "", "study_quiz_answer_d", {})
+	elif target == "study_quiz_answer_d":
+		study_pending_answer_d = value
+		study_status_text = "Choose correct answer A/B/C/D, then Save question"
+	elif target == "study_create_language_list":
+		api.request_post("/api/study/languages/lists/create", {"name": value, "language": "English"})
+	elif target == "study_language_word":
+		study_pending_language_word = value
+		_open_text_input("Pronunciation", "", "study_language_pronunciation", {})
+	elif target == "study_language_pronunciation":
+		study_pending_language_pronunciation = value
+		_open_text_input("Meaning", "", "study_language_meaning", {})
+	elif target == "study_language_meaning":
+		api.request_post("/api/study/languages/words/create", {"list_id": study_selected_language_list_id, "word": study_pending_language_word, "pronunciation": study_pending_language_pronunciation, "meaning": value})
+	_request_redraw()
 
 func _settings_update(section: String, key: String, value) -> void:
 	var section_data = settings_data.get(section, {})
@@ -849,6 +1502,11 @@ func _begin_scroll_drag(position: Vector2) -> bool:
 		scroll_drag_area = "quick_shelf"
 		scroll_drag_last_y = position.y
 		return true
+	if nav.current_screen == "Study" and study_current_page == "smart_study" and _study_segment_scrollbar_hit_rect().has_point(position) and _study_segment_max_scroll() > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "study_segments"
+		scroll_drag_last_y = position.y
+		return true
 	return false
 
 func _update_scroll_drag(position: Vector2) -> void:
@@ -865,6 +1523,8 @@ func _handle_scroll_wheel(position: Vector2, amount: float) -> void:
 		_apply_scroll("settings", amount)
 	elif nav.current_screen == "Quick Shelf" and _quick_shelf_scroll_rect().has_point(position):
 		_apply_scroll("quick_shelf", amount)
+	elif nav.current_screen == "Study" and study_current_page == "smart_study" and _study_segment_scroll_rect().has_point(position):
+		_apply_scroll("study_segments", amount)
 
 func _apply_scroll(area: String, amount: float) -> void:
 	if area == "diagnostics":
@@ -878,6 +1538,9 @@ func _apply_scroll(area: String, amount: float) -> void:
 		_request_redraw()
 	elif area == "quick_shelf":
 		quick_shelf_scroll_y = clampf(quick_shelf_scroll_y + amount, 0.0, _quick_shelf_max_scroll())
+		_request_redraw()
+	elif area == "study_segments":
+		study_segment_scroll_y = clampf(study_segment_scroll_y + amount, 0.0, _study_segment_max_scroll())
 		_request_redraw()
 
 func _diagnostics_scroll_rect() -> Rect2:
@@ -898,6 +1561,12 @@ func _quick_shelf_scroll_rect() -> Rect2:
 func _quick_shelf_scrollbar_hit_rect() -> Rect2:
 	return Rect2(596, 120, 24, 324)
 
+func _study_segment_scroll_rect() -> Rect2:
+	return Rect2(44, 210, 354, 160)
+
+func _study_segment_scrollbar_hit_rect() -> Rect2:
+	return Rect2(384, 210, 20, 160)
+
 func _diagnostics_max_scroll() -> float:
 	return maxf(0.0, _diagnostics_content_height() - _diagnostics_scroll_rect().size.y)
 
@@ -909,6 +1578,9 @@ func _settings_max_scroll() -> float:
 
 func _quick_shelf_max_scroll() -> float:
 	return maxf(0.0, _quick_shelf_content_height() - _quick_shelf_scroll_rect().size.y)
+
+func _study_segment_max_scroll() -> float:
+	return maxf(0.0, _study_segment_content_height() - _study_segment_scroll_rect().size.y)
 
 func _diagnostics_content_height() -> float:
 	if active_tab == "Processes":
@@ -925,6 +1597,8 @@ func _diagnostics_content_height() -> float:
 		return 400.0
 	if active_tab == "Network":
 		return 520.0
+	if active_tab == "Study Stats":
+		return 360.0
 	return 260.0
 
 func _control_center_content_height() -> float:
@@ -947,6 +1621,9 @@ func _quick_shelf_content_height() -> float:
 	var count: int = max(8, _settings_enabled_quick_shelf().size())
 	return 142.0 + float(ceil(float(count) / 2.0)) * 72.0
 
+func _study_segment_content_height() -> float:
+	return maxf(_study_segment_scroll_rect().size.y, float(study_segments.size()) * 30.0 + 8.0)
+
 func _open_menu() -> void:
 	_navigate_to("Menu", "menu_open")
 
@@ -963,6 +1640,15 @@ func _open_quick_shelf() -> void:
 	quick_shelf_scroll_y = 0.0
 	if settings_data.is_empty():
 		api.request_get("/api/settings")
+
+func _open_study(page: String = "home") -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "Study"
+	transition_active = false
+	study_current_page = page
+	study_scroll_y = 0.0
+	_request_study_page_data()
+	_request_redraw()
 
 func _open_diagnostics() -> void:
 	nav.previous_screen = nav.current_screen
@@ -1005,6 +1691,8 @@ func _go_home() -> void:
 		direction = "control_close"
 	elif nav.current_screen == "Quick Shelf":
 		direction = "quick_close"
+	elif nav.current_screen == "Study":
+		study_current_page = "home"
 	if direction == "diagnostics":
 		nav.previous_screen = nav.current_screen
 		nav.current_screen = "Face Home"
@@ -1034,7 +1722,12 @@ func _update_api_polling(delta: float) -> void:
 	if api.in_flight:
 		return
 	api_poll_accumulator += delta
+	study_timer_poll_accumulator += delta
 	if transition_active:
+		return
+	if (nav.current_screen == "Face Home" or nav.current_screen == "Study") and study_timer_poll_accumulator >= 1.0:
+		study_timer_poll_accumulator = 0.0
+		api.request_get("/api/study/smart/status")
 		return
 	if nav.current_screen == "Notification Control Center" and control_center_refresh_pending:
 		control_center_refresh_pending = false
@@ -1082,7 +1775,25 @@ func _request_active_diagnostics_tab() -> void:
 		endpoint = "/api/reports"
 	elif active_tab == "Benchmarks":
 		endpoint = "/api/benchmarks/status"
+	elif active_tab == "Study Stats":
+		endpoint = "/api/study/stats"
 	api.request_get(endpoint)
+
+func _request_study_page_data() -> void:
+	if study_current_page == "home" or study_current_page == "stats":
+		api.request_get("/api/study/stats")
+	elif study_current_page == "history":
+		api.request_get("/api/study/history")
+	elif study_current_page == "settings":
+		api.request_get("/api/study/settings/stats")
+	elif study_current_page == "pomodoro" or study_current_page == "smart_study":
+		api.request_get("/api/study/smart/status")
+	elif study_current_page == "flashcards":
+		api.request_get("/api/study/flashcards/decks")
+	elif study_current_page == "quizzes":
+		api.request_get("/api/study/quizzes")
+	elif study_current_page == "languages":
+		api.request_get("/api/study/languages/lists")
 
 func _stop_camera_preview() -> void:
 	if camera_preview_on:
@@ -1108,6 +1819,112 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 		network_detail_data = payload
 		if nav.current_screen == "Diagnostics" and active_tab == "Network":
 			active_tab_data = payload
+	elif endpoint == "/api/study/timer/status":
+		study_timer_data = payload
+		if nav.current_screen == "Study" and study_current_page == "pomodoro":
+			study_data = payload
+	elif endpoint == "/api/study/smart/status":
+		study_timer_data = payload
+		var smart_session_raw = payload.get("session", {})
+		if smart_session_raw is Dictionary:
+			study_active_smart_session_id = int(smart_session_raw.get("id", study_active_smart_session_id))
+		if nav.current_screen == "Study" and study_current_page == "smart_study":
+			study_data = payload
+	elif endpoint.begins_with("/api/study/"):
+		study_status_text = str(payload.get("message", payload.get("status", "ok")))
+		if endpoint == "/api/study/stats" or endpoint == "/api/study/overview" or endpoint == "/api/study/settings/stats":
+			study_data = payload
+			if nav.current_screen == "Diagnostics" and active_tab == "Study Stats":
+				active_tab_data = payload
+		elif endpoint == "/api/study/history":
+			study_data = payload
+		elif endpoint == "/api/study/flashcards/decks":
+			study_data = payload
+		elif endpoint.begins_with("/api/study/flashcards/deck"):
+			study_data = payload
+		elif endpoint == "/api/study/flashcards/decks/create":
+			var deck_raw = payload.get("deck", {})
+			if deck_raw is Dictionary:
+				study_selected_deck_id = int(deck_raw.get("id", 0))
+				study_flashcard_mode = "detail"
+			api.request_get("/api/study/flashcards/decks")
+		elif endpoint == "/api/study/flashcards/cards/create" or endpoint == "/api/study/flashcards/cards/update" or endpoint == "/api/study/flashcards/cards/delete":
+			api.request_get("/api/study/flashcards/deck?deck_id=" + str(study_selected_deck_id))
+		elif endpoint == "/api/study/flashcards/review":
+			if payload.get("status", "") == "ok":
+				study_status_text = "Correct" if bool(payload.get("was_correct", false)) else "Wrong. Correct answer: " + str(payload.get("correct_answer", ""))
+				study_flashcard_feedback_text = study_status_text
+				api.request_get("/api/study/flashcards/review/next?deck_id=" + str(study_selected_deck_id))
+		elif endpoint.begins_with("/api/study/flashcards/review/next") or endpoint.begins_with("/api/study/flashcards/review/start"):
+			var card_raw = payload.get("card", {})
+			study_selected_card = card_raw if card_raw is Dictionary else {}
+		if study_selected_card.is_empty() and study_flashcard_mode == "practice":
+			study_flashcard_mode = "finished"
+		elif endpoint == "/api/study/quizzes":
+			study_data = payload
+		elif endpoint.begins_with("/api/study/quizzes/quiz"):
+			study_data = payload
+		elif endpoint == "/api/study/quizzes/create":
+			var quiz_raw = payload.get("quiz", {})
+			if quiz_raw is Dictionary:
+				study_selected_quiz_id = int(quiz_raw.get("id", 0))
+				study_quiz_mode = "detail"
+			api.request_get("/api/study/quizzes")
+		elif endpoint == "/api/study/quizzes/questions/create" or endpoint == "/api/study/quizzes/questions/update" or endpoint == "/api/study/quizzes/questions/delete":
+			study_pending_quiz_question = ""
+			api.request_get("/api/study/quizzes/quiz?quiz_id=" + str(study_selected_quiz_id))
+		elif endpoint == "/api/study/quizzes/answer":
+			study_status_text = "Correct" if bool(payload.get("correct", false)) else "Wrong. Correct answer: " + str(payload.get("correct_answer", "")) + ". " + str(payload.get("correct_answer_text", ""))
+			study_quiz_feedback_text = study_status_text
+		elif endpoint.begins_with("/api/study/quizzes/question/next"):
+			var question_raw = payload.get("question", {})
+			study_selected_question = question_raw if question_raw is Dictionary else {}
+			if study_selected_question.is_empty() and study_quiz_mode == "play":
+				study_quiz_mode = "finished"
+		elif endpoint == "/api/study/quizzes/mark-review":
+			var marked_question_raw = payload.get("question", {})
+			study_selected_question = marked_question_raw if marked_question_raw is Dictionary else study_selected_question
+		elif endpoint == "/api/study/languages/lists":
+			study_data = payload
+		elif endpoint == "/api/study/languages/lists/create":
+			var list_raw = payload.get("list", {})
+			if list_raw is Dictionary:
+				study_selected_language_list_id = int(list_raw.get("id", 0))
+			api.request_get("/api/study/languages/lists")
+		elif endpoint == "/api/study/languages/words/create":
+			if study_language_mode == "edit":
+				api.request_get("/api/study/languages/list?list_id=" + str(study_selected_language_list_id))
+			else:
+				api.request_get("/api/study/languages/lists")
+		elif endpoint == "/api/study/languages/words/delete":
+			study_selected_language_word_id = 0
+			api.request_get("/api/study/languages/list?list_id=" + str(study_selected_language_list_id))
+		elif endpoint == "/api/study/languages/review":
+			var reviewed_word_raw = payload.get("word", {})
+			study_selected_word = reviewed_word_raw if reviewed_word_raw is Dictionary else study_selected_word
+		elif endpoint.begins_with("/api/study/languages/list"):
+			study_data = payload
+		elif endpoint.begins_with("/api/study/languages/word/next") or endpoint.begins_with("/api/study/languages/practice/next"):
+			var word_raw = payload.get("word", {})
+			study_selected_word = word_raw if word_raw is Dictionary else {}
+			if study_selected_word.is_empty() and study_language_mode == "practice":
+				study_language_mode = "finished"
+		elif endpoint == "/api/study/pomodoro/start" or endpoint == "/api/study/timer/stop":
+			api.request_get("/api/study/timer/status")
+		elif endpoint == "/api/study/smart/start":
+			study_active_smart_session_id = int(payload.get("session_id", 0))
+			api.request_get("/api/study/smart/status")
+		elif endpoint == "/api/study/smart/stop" or endpoint == "/api/study/smart/finish":
+			api.request_get("/api/study/smart/status")
+		elif endpoint == "/api/study/settings/delete":
+			study_selected_deck_id = 0
+			study_selected_quiz_id = 0
+			if nav.current_screen == "Study" and study_current_page == "flashcards":
+				api.request_get("/api/study/flashcards/decks")
+			elif nav.current_screen == "Study" and study_current_page == "quizzes":
+				api.request_get("/api/study/quizzes")
+			else:
+				api.request_get("/api/study/settings/stats")
 	elif endpoint == "/api/settings" or endpoint == "/api/settings/update" or endpoint == "/api/settings/reset-section" or endpoint == "/api/privacy/pin/set":
 		var settings_raw = payload.get("settings", {})
 		if settings_raw is Dictionary:
@@ -1224,6 +2041,8 @@ func _draw_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_diagnostics()
 		"Settings":
 			_draw_settings()
+		"Study":
+			_draw_study()
 		_:
 			_draw_placeholder(nav.placeholder_title if nav.placeholder_title != "" else screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -1336,10 +2155,28 @@ func _rect_visible(rect: Rect2, view_rect: Rect2) -> bool:
 func _draw_face_home() -> void:
 	face.draw_face(self, Vector2(WIDTH, HEIGHT), elapsed, _settings_color(str(_settings_value("appearance", "eye_color", "Blue")), Color(0.18, 0.58, 1.0, 1.0)), _settings_color(str(_settings_value("appearance", "mouth_color", "Blue")), Color(0.18, 0.58, 1.0, 0.95)))
 	_draw_text(Time.get_datetime_string_from_system(false, true).substr(11, 5), Vector2(538, 34), 17, Color(0.48, 0.62, 0.82, 0.82))
+	_draw_study_timer_overlay()
 	if elapsed < nav.status_bubble_until:
 		var bubble: Rect2 = Rect2(198, 350, 244, 58)
 		_draw_card(bubble, Color(0.075, 0.085, 0.105, 0.96), 28.0, false)
 		_draw_text("Status OK", bubble.position + Vector2(28, 37), 20, ThemeScript.TEXT)
+
+func _draw_study_timer_overlay() -> void:
+	if not bool(study_timer_data.get("active", false)):
+		return
+	var remaining: int = int(study_timer_data.get("remaining_seconds", 0))
+	var planned: int = max(1, int(study_timer_data.get("planned_seconds", 1)))
+	var percent: float = float(remaining) / float(planned)
+	var color := Color(0.20, 0.78, 0.36, 0.94)
+	if percent <= 0.05:
+		color = Color(1.0, 0.22, 0.22, 0.94)
+	elif percent <= 0.30:
+		color = Color(1.0, 0.76, 0.20, 0.94)
+	elif percent <= 0.50:
+		color = Color(0.18, 0.58, 1.0, 0.94)
+	var kind := str(study_timer_data.get("kind", "focus")).capitalize()
+	var label: String = kind + ": %02d:%02d" % [int(remaining / 60), remaining % 60]
+	_draw_text(label, Vector2(28, 48), 12, color)
 
 func _settings_color(name: String, fallback: Color) -> Color:
 	var colors: Dictionary = {
@@ -1624,6 +2461,8 @@ func _draw_diagnostics_tab_content() -> void:
 		_draw_logs_rows(offset_y, view_rect)
 	elif active_tab == "Network":
 		_draw_network_rows(offset_y, view_rect)
+	elif active_tab == "Study Stats":
+		_draw_diagnostics_study_stats(offset_y, view_rect)
 	else:
 		_draw_info_row(52, 226 - offset_y, active_tab, "No saved report", "Waiting", view_rect)
 
@@ -1771,6 +2610,20 @@ func _draw_logs_rows(offset_y: float, view_rect: Rect2) -> void:
 		rows = rows_raw
 	for index in range(rows.size()):
 		_draw_text_if_visible(str(rows[index]), Vector2(54, 214 + index * 18 - offset_y), view_rect, 11, ThemeScript.TEXT_MUTED)
+
+func _draw_diagnostics_study_stats(offset_y: float, view_rect: Rect2) -> void:
+	var rows: Array = [
+		{"title": "Study minutes", "value": str(active_tab_data.get("total_study_minutes", "Pending"))},
+		{"title": "Pomodoro sessions", "value": str(active_tab_data.get("total_pomodoro_sessions", "Pending"))},
+		{"title": "Smart sessions", "value": str(active_tab_data.get("total_smart_study_sessions", "Pending"))},
+		{"title": "Flashcards", "value": str(active_tab_data.get("total_flashcards", "Pending"))},
+		{"title": "Quiz questions", "value": str(active_tab_data.get("total_quiz_questions", "Pending"))},
+		{"title": "Language words", "value": str(active_tab_data.get("total_language_words", "Pending"))},
+		{"title": "Mastered words", "value": str(active_tab_data.get("mastered_language_words", "Pending"))}
+	]
+	for index in range(rows.size()):
+		var item: Dictionary = rows[index] as Dictionary
+		_draw_info_row(54, 224 + index * 34 - offset_y, str(item["title"]), str(item["value"]), "Live", view_rect)
 
 func _draw_info_row(x: float, y: float, title: String, subtitle: String, status: String, view_rect: Rect2) -> void:
 	var row_rect: Rect2 = Rect2(x - 6.0, y - 22.0, 540.0, 32.0)
@@ -1982,6 +2835,8 @@ func _quick_shelf_icon(name: String) -> String:
 		return "◷"
 	if name == "Camera":
 		return "□"
+	if name == "Study" or name == "Study Stats":
+		return "◌"
 	return "◆"
 
 func _quick_shelf_subtitle(name: String) -> String:
@@ -1991,9 +2846,346 @@ func _quick_shelf_subtitle(name: String) -> String:
 		return str(sound_percent) + "%"
 	if name == "Quiet Mode":
 		return "On" if quiet_mode_local else "Off"
-	if name in ["Diagnostics", "Settings", "Clock", "Network", "Camera", "Logs", "Reports"]:
+	if name in ["Diagnostics", "Settings", "Clock", "Network", "Camera", "Logs", "Reports", "Study", "Study Stats"]:
 		return "Open"
 	return "Planned"
+
+func _draw_study() -> void:
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	_draw_text("NeXa Learn", Vector2(26, 44), 26, ThemeScript.TEXT)
+	_draw_text("Learn smarter with NeXa", Vector2(28, 66), 11, ThemeScript.TEXT_MUTED)
+	var back_label: String = "Home" if study_current_page == "home" else "Back"
+	_draw_pill(Rect2(520, 22, 92, 34), Color(0.10, 0.11, 0.13, 0.94), false)
+	_draw_centered_text(back_label, 566.0, 43.0, 12, ThemeScript.TEXT_MUTED)
+	if study_current_page == "home":
+		_draw_study_home()
+	elif study_current_page == "pomodoro":
+		_draw_study_pomodoro()
+	elif study_current_page == "smart_study":
+		_draw_study_smart()
+	elif study_current_page == "flashcards":
+		_draw_study_flashcards()
+	elif study_current_page == "quizzes":
+		_draw_study_quizzes()
+	elif study_current_page == "languages":
+		_draw_study_languages()
+	elif study_current_page == "stats":
+		_draw_study_stats()
+	elif study_current_page == "history":
+		_draw_study_history()
+	elif study_current_page == "settings":
+		_draw_study_settings()
+	if study_status_text != "":
+		_draw_text(_short_text(study_status_text, 70), Vector2(34, 460), 10, ThemeScript.TEXT_DIM)
+	if text_input_open:
+		_draw_text_input_overlay()
+
+func _draw_study_home() -> void:
+	for index in range(STUDY_TILES.size()):
+		var rect: Rect2 = _study_tile_rect(index)
+		var tile: Dictionary = STUDY_TILES[index] as Dictionary
+		_draw_tile(rect, str(tile["title"]) == "Study Stats")
+		_draw_text(str(tile["title"]), rect.position + Vector2(16, 28), 15, ThemeScript.TEXT)
+		_draw_text(str(tile["subtitle"]), rect.position + Vector2(16, 49), 10, ThemeScript.TEXT_MUTED)
+
+func _study_tile_rect(index: int) -> Rect2:
+	var column: int = index % 2
+	var row: int = int(index / 2)
+	return Rect2(28.0 + float(column) * 300.0, 96.0 + float(row) * 72.0, 284.0, 58.0)
+
+func _draw_study_pomodoro() -> void:
+	_draw_text("Pomodoro", Vector2(44, 102), 20, ThemeScript.TEXT)
+	_draw_study_row(Rect2(44, 118, 552, 38), "Topic", study_topic_text if study_topic_text != "" else "Tap to type")
+	_draw_button(Rect2(44, 166, 120, 34), "-5 min", false)
+	_draw_button(Rect2(176, 166, 120, 34), "+" + str(study_planned_minutes) + " min", false)
+	_draw_button(Rect2(308, 166, 120, 34), "Break " + str(study_break_minutes), study_break_minutes > 0)
+	_draw_button(Rect2(44, 216, 260, 42), "Start Focus", false)
+	_draw_button(Rect2(324, 216, 260, 42), "Stop Focus", false)
+	if bool(study_timer_data.get("active", false)):
+		_draw_study_row(Rect2(44, 276, 552, 38), "Active", "Remaining " + str(int(study_timer_data.get("remaining_seconds", 0) / 60)) + "m")
+
+func _draw_study_smart() -> void:
+	_draw_text("Smart Study", Vector2(44, 102), 20, ThemeScript.TEXT)
+	_draw_study_row(Rect2(44, 118, 350, 36), "Topic", study_topic_text if study_topic_text != "" else "Tap to type")
+	_draw_study_row(Rect2(44, 164, 350, 36), "Goal", study_goal_text if study_goal_text != "" else "Tap to type")
+	_draw_button(Rect2(420, 118, 170, 32), "+ Focus", false)
+	_draw_button(Rect2(420, 156, 170, 32), "+ Break", false)
+	_draw_button(Rect2(420, 194, 170, 32), "Remove", study_segments.size() > 1)
+	_draw_button(Rect2(420, 232, 80, 32), "-5", false)
+	_draw_button(Rect2(510, 232, 80, 32), "+5", false)
+	var total_focus := 0
+	var total_break := 0
+	var view_rect: Rect2 = _study_segment_scroll_rect()
+	_draw_text("Segments", Vector2(48, 206), 11, ThemeScript.TEXT_MUTED)
+	for index in range(study_segments.size()):
+		var segment: Dictionary = study_segments[index] as Dictionary
+		var minutes := int(segment.get("minutes", 0))
+		if str(segment.get("type", "focus")) == "break":
+			total_break += minutes
+		else:
+			total_focus += minutes
+		var rect: Rect2 = _study_segment_row_rect(index)
+		if not _rect_visible(rect, view_rect):
+			continue
+		var marker := ">" if index == study_selected_segment_index else " "
+		_draw_tile(rect, index == study_selected_segment_index)
+		_draw_text(marker + " " + str(index + 1) + ". " + str(segment.get("type", "focus")).capitalize() + " " + str(minutes) + "m", rect.position + Vector2(8, 17), 11, ThemeScript.TEXT)
+	_draw_scrollbar(view_rect, study_segment_scroll_y, _study_segment_content_height())
+	_draw_study_row(Rect2(44, 374, 354, 30), "Focus total", str(total_focus) + "m")
+	_draw_study_row(Rect2(44, 408, 170, 28), "Break total", str(total_break) + "m")
+	_draw_study_row(Rect2(224, 408, 174, 28), "Segments", str(study_segments.size()))
+	var validation := _validate_study_segments()
+	_draw_text(_short_text("Validation: " + (validation if validation != "" else "Ready"), 58), Vector2(48, 454), 10, ThemeScript.TEXT_MUTED)
+	if bool(study_timer_data.get("active", false)):
+		var remaining: int = int(study_timer_data.get("remaining_seconds", 0))
+		_draw_text(str(study_timer_data.get("kind", "focus")).capitalize() + ": %02d:%02d" % [int(remaining / 60), remaining % 60], Vector2(424, 286), 13, ThemeScript.TEXT)
+		if bool(study_timer_data.get("note_prompt_pending", false)) and _study_current_segment_is_focus():
+			_draw_text("What did you learn?", Vector2(424, 320), 12, ThemeScript.TEXT)
+			_draw_button(Rect2(424, 334, 76, 30), "Add note", false)
+			_draw_button(Rect2(510, 334, 76, 30), "Skip", false)
+		_draw_button(Rect2(424, 374, 76, 28), "Stop", false)
+		_draw_button(Rect2(510, 374, 76, 28), "Finish", false)
+	else:
+		_draw_button(Rect2(420, 274, 170, 34), "Start", false)
+
+func _draw_study_flashcards() -> void:
+	_draw_text("Flashcards", Vector2(44, 102), 20, ThemeScript.TEXT)
+	_draw_button(Rect2(44, 118, 170, 38), "New Flashcards", false)
+	_draw_button(Rect2(232, 118, 170, 38), "Add Question", study_selected_deck_id > 0)
+	_draw_button(Rect2(420, 118, 170, 38), "Start Study", study_selected_deck_id > 0)
+	_draw_button(Rect2(44, 164, 170, 34), "Delete Flashcards", study_selected_deck_id > 0)
+	if study_flashcard_mode == "practice" and study_selected_card.has("id"):
+		var title := str(study_data.get("deck", {}).get("name", "Flashcards")) if study_data.get("deck", {}) is Dictionary else "Flashcards"
+		_draw_text(_short_text(title, 40), Vector2(48, 176), 14, ThemeScript.TEXT)
+		_draw_text("Question " + str(study_selected_card.get("question_number", 1)) + "/" + str(maxi(1, int(study_data.get("card_count", 1)))), Vector2(48, 194), 10, ThemeScript.TEXT_MUTED)
+		_draw_study_row(Rect2(44, 204, 552, 38), "Question", str(study_selected_card.get("question", "")))
+		_draw_study_row(Rect2(44, 244, 552, 28), "Answer input", study_flashcard_answer_text if study_flashcard_answer_text != "" else "Tap Type Answer")
+		_draw_button(Rect2(44, 278, 170, 30), "Type Answer", false)
+		_draw_button(Rect2(232, 278, 170, 30), "Check Answer", study_flashcard_answer_text.strip_edges() != "")
+		_draw_button(Rect2(420, 278, 170, 30), "Reveal Answer", study_selected_card.has("id"))
+		_draw_button(Rect2(44, 316, 160, 30), "I know this", study_flashcard_answer_checked or study_flashcard_revealed_answer)
+		_draw_button(Rect2(220, 316, 160, 30), "Not sure", study_flashcard_answer_checked or study_flashcard_revealed_answer)
+		_draw_button(Rect2(396, 316, 160, 30), "I don't know", study_flashcard_answer_checked or study_flashcard_revealed_answer)
+		_draw_button(Rect2(44, 354, 170, 30), "Next", false)
+		_draw_button(Rect2(232, 354, 170, 30), "Finish", false)
+		_draw_study_feedback(Rect2(44, 394, 552, 50), study_flashcard_feedback_text, str(study_selected_card.get("status", "new")) + " · " + str(study_selected_card.get("correct_count", 0)) + " correct · " + str(study_selected_card.get("wrong_count", 0)) + " wrong")
+	elif study_flashcard_mode == "finished":
+		_draw_text("Flashcards finished. Finish or continue?", Vector2(48, 210), 13, ThemeScript.TEXT)
+		_draw_button(Rect2(44, 390, 170, 34), "Finish", false)
+		_draw_button(Rect2(232, 390, 170, 34), "Continue", false)
+	else:
+		var selected_label := "Selected set " + str(study_selected_deck_id) if study_selected_deck_id > 0 else "Select one flashcard set"
+		_draw_selected_study_item("Flashcards", {"question": selected_label, "status": "Single selected set"}, "question", "status", 204)
+		if study_data.has("cards"):
+			_draw_study_list("cards", "question", "status", "", 226)
+		else:
+			_draw_study_list("decks", "name", "card_count", "cards", 226)
+	if study_flashcard_delete_confirm_open:
+		_draw_rounded_rect(Rect2(62, 286, 516, 128), Color(0.08, 0.04, 0.045, 0.98), 18.0)
+		_draw_rounded_outline(Rect2(62, 286, 516, 128), Color(1.0, 0.22, 0.22, 0.45), 18.0)
+		_draw_text("Delete selected Flashcards?", Vector2(84, 320), 17, ThemeScript.TEXT)
+		_draw_text("This cannot be undone.", Vector2(84, 344), 11, ThemeScript.TEXT_MUTED)
+		_draw_button(Rect2(78, 354, 210, 42), "Cancel", false)
+		_draw_button(Rect2(352, 354, 210, 42), "Confirm delete", true)
+
+func _draw_study_quizzes() -> void:
+	_draw_text("Quizzes", Vector2(44, 102), 20, ThemeScript.TEXT)
+	_draw_button(Rect2(44, 118, 170, 38), "New Quiz", false)
+	_draw_button(Rect2(232, 118, 170, 38), "Add Question", study_selected_quiz_id > 0)
+	_draw_button(Rect2(420, 118, 170, 38), "Start Quiz", study_selected_quiz_id > 0)
+	_draw_button(Rect2(44, 164, 170, 34), "Delete Quiz", study_selected_quiz_id > 0)
+	if study_pending_quiz_question != "":
+		_draw_text("Choose correct answer", Vector2(48, 166), 11, ThemeScript.TEXT_MUTED)
+		_draw_button(Rect2(44, 174, 56, 32), "A", study_pending_correct_answer == "A")
+		_draw_button(Rect2(108, 174, 56, 32), "B", study_pending_correct_answer == "B")
+		_draw_button(Rect2(172, 174, 56, 32), "C", study_pending_correct_answer == "C")
+		_draw_button(Rect2(236, 174, 56, 32), "D", study_pending_correct_answer == "D")
+		_draw_button(Rect2(308, 174, 142, 32), "Save question", false)
+	if study_quiz_mode == "play" and study_selected_question.has("id"):
+		_draw_text("Question " + str(study_selected_question.get("question_number", 1)), Vector2(48, 204), 11, ThemeScript.TEXT_MUTED)
+		_draw_study_row(Rect2(44, 208, 552, 24), "Question", str(study_selected_question.get("question", "")))
+		_draw_button(Rect2(44, 238, 260, 32), "A. " + _short_text(str(study_selected_question.get("answer_a", "")), 26), false)
+		_draw_button(Rect2(324, 238, 260, 32), "B. " + _short_text(str(study_selected_question.get("answer_b", "")), 26), false)
+		_draw_button(Rect2(44, 276, 260, 32), "C. " + _short_text(str(study_selected_question.get("answer_c", "")), 26), false)
+		_draw_button(Rect2(324, 276, 260, 32), "D. " + _short_text(str(study_selected_question.get("answer_d", "")), 26), false)
+		_draw_study_feedback(Rect2(44, 316, 552, 30), study_quiz_feedback_text, str(study_selected_question.get("status", "new")))
+		_draw_button(Rect2(44, 354, 170, 30), "Mark for review", false)
+		_draw_button(Rect2(232, 354, 170, 30), "Next", study_quiz_answered)
+		_draw_button(Rect2(420, 354, 170, 30), "Finish", false)
+	elif study_quiz_mode == "finished":
+		_draw_text("Quiz finished.", Vector2(48, 210), 13, ThemeScript.TEXT)
+		_draw_button(Rect2(44, 390, 170, 30), "Finish", false)
+		_draw_button(Rect2(232, 390, 170, 30), "Repeat wrong", false)
+		_draw_button(Rect2(420, 390, 170, 30), "Repeat marked", false)
+	else:
+		if study_data.has("questions"):
+			_draw_study_list("questions", "question", "status", "", 226)
+		else:
+			_draw_study_list("quizzes", "name", "question_count", "questions", 226)
+	if study_quiz_delete_confirm_open:
+		_draw_rounded_rect(Rect2(62, 286, 516, 128), Color(0.08, 0.04, 0.045, 0.98), 18.0)
+		_draw_rounded_outline(Rect2(62, 286, 516, 128), Color(1.0, 0.22, 0.22, 0.45), 18.0)
+		_draw_text("Delete selected Quiz?", Vector2(84, 320), 17, ThemeScript.TEXT)
+		_draw_text("This cannot be undone.", Vector2(84, 344), 11, ThemeScript.TEXT_MUTED)
+		_draw_button(Rect2(78, 354, 210, 42), "Cancel", false)
+		_draw_button(Rect2(352, 354, 210, 42), "Confirm delete", true)
+
+func _draw_study_languages() -> void:
+	_draw_text("Languages", Vector2(44, 102), 20, ThemeScript.TEXT)
+	_draw_button(Rect2(44, 118, 170, 38), "New List", false)
+	_draw_button(Rect2(232, 118, 170, 38), "Add Word", study_selected_language_list_id > 0)
+	_draw_button(Rect2(420, 118, 170, 38), "Edit List", study_selected_language_list_id > 0)
+	_draw_button(Rect2(44, 164, 170, 34), "Start Practice", study_selected_language_list_id > 0)
+	_draw_button(Rect2(232, 164, 170, 34), "Delete List", study_selected_language_list_id > 0)
+	if study_language_mode == "practice" and study_selected_word.has("id"):
+		_draw_text("Word " + str(study_selected_word.get("question_number", 1)), Vector2(48, 204), 11, ThemeScript.TEXT_MUTED)
+		_draw_study_row(Rect2(44, 214, 552, 34), "Word", str(study_selected_word.get("word", "")))
+		_draw_study_row(Rect2(44, 244, 552, 28), "Meaning input", study_language_answer_text if study_language_answer_text != "" else "Tap to type meaning")
+		_draw_button(Rect2(44, 278, 170, 30), "Type Meaning", false)
+		_draw_button(Rect2(232, 278, 170, 30), "Check Answer", study_language_answer_text.strip_edges() != "")
+		_draw_button(Rect2(420, 278, 170, 30), "Reveal Answer", study_selected_word.has("id"))
+		_draw_button(Rect2(44, 316, 170, 30), "Correct", study_language_answer_checked or study_language_revealed_word)
+		_draw_button(Rect2(232, 316, 170, 30), "Wrong", study_language_answer_checked or study_language_revealed_word)
+		_draw_button(Rect2(44, 354, 170, 30), "Next", false)
+		_draw_button(Rect2(232, 354, 170, 30), "Finish", false)
+		_draw_study_feedback(Rect2(44, 394, 552, 50), study_language_feedback_text, str(study_selected_word.get("status", "new")) + " · " + str(study_selected_word.get("correct_count", 0)) + " correct · " + str(study_selected_word.get("wrong_count", 0)) + " wrong")
+	elif study_language_mode == "finished":
+		_draw_text("Language practice finished.", Vector2(48, 210), 13, ThemeScript.TEXT)
+		_draw_button(Rect2(44, 390, 170, 30), "Finish", false)
+	elif study_language_mode == "edit":
+		_draw_selected_study_item("Language list", {"id": study_selected_language_list_id, "question": "Selected list " + str(study_selected_language_list_id), "status": "Edit mode"}, "question", "status", 204)
+		_draw_study_list("words", "word", "status", "", 226)
+		_draw_button(Rect2(44, 390, 170, 30), "Add Word", false)
+		_draw_button(Rect2(232, 390, 170, 30), "Delete Word", study_selected_language_word_id > 0)
+		_draw_button(Rect2(420, 390, 170, 30), "Back to Lists", false)
+	else:
+		var selected_label := "Selected language list " + str(study_selected_language_list_id) if study_selected_language_list_id > 0 else "Select one language list"
+		_draw_selected_study_item("Language list", {"question": selected_label, "status": "Single selected list"}, "question", "status", 204)
+		_draw_study_list("lists", "name", "word_count", "words", 226)
+	if study_language_delete_confirm_open:
+		_draw_rounded_rect(Rect2(62, 286, 516, 128), Color(0.08, 0.04, 0.045, 0.98), 18.0)
+		_draw_rounded_outline(Rect2(62, 286, 516, 128), Color(1.0, 0.22, 0.22, 0.45), 18.0)
+		_draw_text("Delete selected language list?", Vector2(84, 320), 17, ThemeScript.TEXT)
+		_draw_text("This cannot be undone.", Vector2(84, 344), 11, ThemeScript.TEXT_MUTED)
+		_draw_button(Rect2(78, 354, 210, 42), "Cancel", false)
+		_draw_button(Rect2(352, 354, 210, 42), "Confirm delete", true)
+
+func _draw_study_stats() -> void:
+	_draw_text("Study Stats", Vector2(44, 102), 20, ThemeScript.TEXT)
+	var cards: Array = [
+		{"title": "Minutes", "value": str(study_data.get("total_study_minutes", "Pending"))},
+		{"title": "Pomodoro", "value": str(study_data.get("total_pomodoro_sessions", "Pending"))},
+		{"title": "Smart", "value": str(study_data.get("total_smart_study_sessions", "Pending"))},
+		{"title": "Decks", "value": str(study_data.get("total_flashcard_decks", "Pending"))},
+		{"title": "Cards", "value": str(study_data.get("total_flashcards", "Pending"))},
+		{"title": "Quizzes", "value": str(study_data.get("total_quiz_sets", "Pending"))},
+		{"title": "Words", "value": str(study_data.get("total_language_words", "Pending"))},
+		{"title": "Mastered", "value": str(study_data.get("mastered_language_words", "Pending"))}
+	]
+	for index in range(cards.size()):
+		var rect: Rect2 = Rect2(44.0 + float(index % 2) * 276.0, 126.0 + float(int(index / 2)) * 48.0, 252.0, 38.0)
+		var item: Dictionary = cards[index] as Dictionary
+		_draw_study_row(rect, str(item["title"]), str(item["value"]))
+	_draw_study_topic_stats(326)
+
+func _draw_study_topic_stats(y_start: float) -> void:
+	_draw_text("Topics", Vector2(48, y_start), 14, ThemeScript.TEXT)
+	var rows_raw = study_data.get("per_topic_stats", [])
+	if not (rows_raw is Array) or rows_raw.is_empty():
+		_draw_text("No study data yet", Vector2(48, y_start + 26), 11, ThemeScript.TEXT_MUTED)
+		return
+	var rows: Array = rows_raw
+	for index in range(mini(rows.size(), 3)):
+		var item: Dictionary = rows[index] as Dictionary
+		_draw_study_row(Rect2(44, y_start + 20 + index * 38, 552, 32), str(item.get("topic", "Topic")), str(item.get("sessions", 0)) + "x · " + str(item.get("total_minutes", 0)) + "m")
+
+func _draw_study_history() -> void:
+	_draw_text("History", Vector2(44, 102), 20, ThemeScript.TEXT)
+	var rows_raw = study_data.get("events", [])
+	if not (rows_raw is Array) or rows_raw.is_empty():
+		_draw_text("No study history yet", Vector2(48, 142), 12, ThemeScript.TEXT_MUTED)
+		return
+	var rows: Array = rows_raw
+	for index in range(mini(rows.size(), 8)):
+		var item: Dictionary = rows[index] as Dictionary
+		_draw_study_row(Rect2(44, 126 + index * 38, 552, 32), str(item.get("event_type", "event")), str(item.get("summary", "")))
+
+func _draw_study_settings() -> void:
+	_draw_text("Study Settings", Vector2(44, 102), 20, ThemeScript.TEXT)
+	_draw_study_row(Rect2(44, 126, 552, 34), "Database", str(study_data.get("database_size_bytes", "Pending")) + " bytes")
+	_draw_study_row(Rect2(44, 168, 552, 34), "Sessions", str(study_data.get("total_pomodoro_sessions", "Pending")))
+	_draw_study_row(Rect2(44, 210, 552, 34), "Decks/cards", str(study_data.get("total_flashcard_decks", "Pending")) + " / " + str(study_data.get("total_flashcards", "Pending")))
+	_draw_study_row(Rect2(44, 252, 552, 34), "Quizzes/questions", str(study_data.get("total_quiz_sets", "Pending")) + " / " + str(study_data.get("total_quiz_questions", "Pending")))
+	_draw_study_row(Rect2(44, 294, 552, 34), "Lists/words", str(study_data.get("total_language_lists", "Pending")) + " / " + str(study_data.get("total_language_words", "Pending")))
+	_draw_button(Rect2(44, 390, 260, 42), "Delete all Study data", false)
+	_draw_button(Rect2(324, 390, 260, 42), "Export planned", false)
+	if study_delete_confirm_open:
+		_draw_rounded_rect(Rect2(62, 286, 516, 128), Color(0.08, 0.04, 0.045, 0.98), 18.0)
+		_draw_rounded_outline(Rect2(62, 286, 516, 128), Color(1.0, 0.22, 0.22, 0.45), 18.0)
+		_draw_text("Delete all Study data?", Vector2(84, 320), 17, ThemeScript.TEXT)
+		_draw_text("This cannot be undone.", Vector2(84, 344), 11, ThemeScript.TEXT_MUTED)
+		_draw_button(Rect2(78, 354, 210, 42), "Cancel", false)
+		_draw_button(Rect2(352, 354, 210, 42), "Confirm delete", true)
+
+func _draw_study_row(rect: Rect2, title: String, value: String) -> void:
+	_draw_tile(rect, false)
+	_draw_text(_short_text(title, 26), rect.position + Vector2(12, 22), 12, ThemeScript.TEXT)
+	_draw_text(_short_text(value, 34), rect.position + Vector2(210, 22), 10, ThemeScript.TEXT_MUTED)
+
+func _draw_study_list(key: String, title_key: String, count_key: String, suffix: String, y_start: float) -> void:
+	var rows_raw = study_data.get(key, [])
+	if not (rows_raw is Array) or rows_raw.is_empty():
+		_draw_text("No study data yet", Vector2(48, y_start + 18), 11, ThemeScript.TEXT_MUTED)
+		return
+	var rows: Array = rows_raw
+	for index in range(mini(rows.size(), 5)):
+		var item: Dictionary = rows[index] as Dictionary
+		var rect := _study_list_rect(index)
+		var active := (key == "decks" and int(item.get("id", 0)) == study_selected_deck_id) or (key == "quizzes" and int(item.get("id", 0)) == study_selected_quiz_id) or (key == "lists" and int(item.get("id", 0)) == study_selected_language_list_id) or (key == "words" and int(item.get("id", 0)) == study_selected_language_word_id)
+		_draw_tile(rect, active)
+		_draw_text(_short_text(str(item.get(title_key, "Item")), 26), rect.position + Vector2(12, 22), 12, ThemeScript.TEXT)
+		_draw_text(_short_text(str(item.get(count_key, 0)) + " " + suffix, 34), rect.position + Vector2(210, 22), 10, ThemeScript.TEXT_MUTED)
+
+func _draw_study_feedback(rect: Rect2, feedback: String, status: String) -> void:
+	_draw_tile(rect, false)
+	var color := ThemeScript.TEXT_MUTED
+	if feedback.begins_with("Correct"):
+		color = Color(0.30, 0.90, 0.52, 1.0)
+	elif feedback.begins_with("Wrong") or feedback.begins_with("Incorrect"):
+		color = Color(1.0, 0.32, 0.32, 1.0)
+	elif feedback != "":
+		color = Color(0.95, 0.78, 0.36, 1.0)
+	_draw_text(_short_text(feedback if feedback != "" else "Feedback appears here", 72), rect.position + Vector2(12, 20), 13, color)
+	_draw_text(_short_text("Status: " + status, 72), rect.position + Vector2(12, 40), 10, ThemeScript.TEXT_MUTED)
+
+func _study_list_rect(index: int) -> Rect2:
+	return Rect2(44, 226 + index * 42, 552, 34)
+
+func _draw_selected_study_item(label: String, item: Dictionary, title_key: String, value_key: String, y: float) -> void:
+	if not item.has("id"):
+		_draw_study_row(Rect2(44, y, 552, 34), label, "Select an item")
+	else:
+		_draw_study_row(Rect2(44, y, 552, 34), str(item.get(title_key, label)), str(item.get(value_key, "")))
+
+func _draw_text_input_overlay() -> void:
+	_draw_rounded_rect(Rect2(22, 72, 596, 372), Color(0.040, 0.047, 0.060, 0.98), 24.0)
+	_draw_rounded_outline(Rect2(22, 72, 596, 372), Color(1.0, 1.0, 1.0, 0.08), 24.0)
+	_draw_text(text_input_title, Vector2(44, 108), 18, ThemeScript.TEXT)
+	_draw_study_row(Rect2(44, 122, 552, 38), "Input", text_input_value)
+	var keys := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?!-/:"
+	for index in range(keys.length()):
+		var rect: Rect2 = _text_key_rect(index)
+		_draw_button(rect, keys.substr(index, 1), false)
+	_draw_button(Rect2(40, 386, 96, 34), "Space", false)
+	_draw_button(Rect2(146, 386, 96, 34), "Back", false)
+	_draw_button(Rect2(252, 386, 96, 34), "Clear", false)
+	_draw_button(Rect2(412, 386, 82, 34), "Save", true)
+	_draw_button(Rect2(504, 386, 82, 34), "Cancel", false)
+
+func _text_key_rect(index: int) -> Rect2:
+	var column: int = index % 9
+	var row: int = int(index / 9)
+	return Rect2(44.0 + float(column) * 58.0, 170.0 + float(row) * 38.0, 46.0, 28.0)
 
 func _draw_about_settings(view_rect: Rect2) -> void:
 	var rows: Array = [

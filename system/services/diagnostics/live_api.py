@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from system.services.diagnostics.camera_preview import CameraPreviewWorker
 from system.services.diagnostics.job_runner import (
@@ -26,6 +26,7 @@ from system.services.diagnostics.live_collectors import (
 )
 from system.services.diagnostics.live_state import LiveState, ensure_runtime_dirs
 from system.services.settings import settings_store
+from system.services.study import study_store
 
 
 HOST = "127.0.0.1"
@@ -93,10 +94,49 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
             return {}
 
     def do_GET(self):  # noqa: N802
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
         try:
             if path == "/health":
                 self._json({"status": "ok", "host": HOST, "port": PORT})
+            elif path == "/api/study/overview":
+                self._json(study_store.overview())
+            elif path == "/api/study/stats":
+                self._json(study_store.stats())
+            elif path == "/api/study/history":
+                self._json(study_store.history())
+            elif path == "/api/study/timer/status":
+                self._json(study_store.timer_status())
+            elif path == "/api/study/smart/status":
+                self._json(study_store.smart_status())
+            elif path == "/api/study/flashcards/decks":
+                self._json(study_store.decks())
+            elif path == "/api/study/flashcards/deck":
+                self._json(study_store.deck_detail(_query_int(query, "deck_id")))
+            elif path == "/api/study/flashcards/review/start":
+                self._json(study_store.start_flashcard_review(_query_int(query, "deck_id"), _query_str(query, "mode", "all")))
+            elif path == "/api/study/flashcards/review/next":
+                deck_id = _query_int(query, "deck_id") or _query_int(query, "session_id")
+                self._json(study_store.next_card(deck_id, _query_str(query, "mode", "all")))
+            elif path == "/api/study/quizzes":
+                self._json(study_store.quizzes())
+            elif path == "/api/study/quizzes/quiz":
+                self._json(study_store.quiz_detail(_query_int(query, "quiz_id")))
+            elif path == "/api/study/quizzes/question/next":
+                self._json(study_store.next_quiz_question(_query_int(query, "quiz_id"), _query_str(query, "mode", "all")))
+            elif path == "/api/study/languages/lists":
+                self._json(study_store.language_lists())
+            elif path == "/api/study/languages/list":
+                self._json(study_store.language_list_detail(_query_int(query, "list_id")))
+            elif path == "/api/study/languages/word/next":
+                self._json(study_store.next_language_word(_query_int(query, "list_id"), _query_str(query, "mode", "all")))
+            elif path == "/api/study/languages/practice/next":
+                self._json(study_store.next_language_word(_query_int(query, "list_id"), _query_str(query, "mode", "all")))
+            elif path == "/api/study/notes":
+                self._json(study_store.notes())
+            elif path == "/api/study/settings/stats":
+                self._json(study_store.settings_stats())
             elif path == "/api/overview":
                 self._json(cached(STATE, "overview", TTL_SECONDS["overview"], lambda: overview_data(STATE)))
             elif path == "/api/system":
@@ -146,7 +186,59 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
         data = self._body_json()
-        if path == "/api/benchmarks/run":
+        if path == "/api/study/pomodoro/start":
+            self._json(study_store.start_pomodoro(data.get("topic", ""), data.get("planned_minutes", 25), data.get("break_minutes", 0)))
+        elif path == "/api/study/timer/stop":
+            self._json(study_store.stop_timer())
+        elif path == "/api/study/smart/start":
+            self._json(study_store.smart_start(data.get("topic", ""), data.get("goal", ""), data.get("total_minutes", 45), data.get("break_count", 0), data.get("break_minutes", 5), data.get("segments")))
+        elif path == "/api/study/smart/note":
+            self._json(study_store.smart_note(data.get("session_id", 0), data.get("note_text", "")))
+        elif path == "/api/study/smart/skip-note":
+            self._json(study_store.smart_skip_note(data.get("session_id", 0)))
+        elif path == "/api/study/smart/finish":
+            self._json(study_store.smart_finish(data.get("session_id", 0)))
+        elif path == "/api/study/smart/stop":
+            self._json(study_store.smart_stop(data.get("session_id", 0)))
+        elif path == "/api/study/flashcards/decks/create":
+            self._json(study_store.create_deck(data.get("name", ""), data.get("description", "")))
+        elif path == "/api/study/flashcards/cards/create":
+            self._json(study_store.add_card(data.get("deck_id", 0), data.get("question", ""), data.get("answer", "")))
+        elif path == "/api/study/flashcards/cards/update":
+            self._json(study_store.update_card(data.get("card_id", 0), data.get("question"), data.get("answer")))
+        elif path == "/api/study/flashcards/cards/delete":
+            self._json(study_store.delete_card(data.get("card_id", 0)))
+        elif path == "/api/study/flashcards/review":
+            self._json(study_store.review_card(data.get("card_id", 0), data.get("result"), data.get("typed_answer", ""), data.get("confidence"), bool(data.get("revealed_answer", False))))
+        elif path == "/api/study/quizzes/create":
+            self._json(study_store.create_quiz(data.get("name", ""), data.get("description", "")))
+        elif path == "/api/study/quizzes/questions/create":
+            self._json(study_store.add_quiz_question(data.get("quiz_id", 0), data.get("question", ""), data.get("answer_a", ""), data.get("answer_b", ""), data.get("answer_c", ""), data.get("answer_d", ""), data.get("correct_answer", "")))
+        elif path == "/api/study/quizzes/questions/update":
+            self._json(study_store.update_quiz_question(data.get("question_id", 0), data.get("question"), data.get("answer_a"), data.get("answer_b"), data.get("answer_c"), data.get("answer_d"), data.get("correct_answer")))
+        elif path == "/api/study/quizzes/questions/delete":
+            self._json(study_store.delete_quiz_question(data.get("question_id", 0)))
+        elif path == "/api/study/quizzes/attempt/start":
+            self._json(study_store.start_quiz_attempt(data.get("quiz_id", 0), data.get("mode", "all")))
+        elif path == "/api/study/quizzes/answer":
+            self._json(study_store.answer_quiz_question(data.get("question_id", 0), data.get("answer", ""), bool(data.get("marked_for_review", False))))
+        elif path == "/api/study/quizzes/mark-review":
+            self._json(study_store.mark_quiz_question(data.get("question_id", 0)))
+        elif path == "/api/study/quizzes/attempt/finish":
+            self._json(study_store.finish_quiz_attempt(data.get("quiz_id", 0), data.get("score", 0), data.get("total_questions", 0)))
+        elif path == "/api/study/languages/lists/create":
+            self._json(study_store.create_language_list(data.get("name", ""), data.get("language", "English")))
+        elif path == "/api/study/languages/words/create":
+            self._json(study_store.add_language_word(data.get("list_id", 0), data.get("word", ""), data.get("meaning", ""), data.get("pronunciation", "")))
+        elif path == "/api/study/languages/words/delete":
+            self._json(study_store.delete_language_word(data.get("word_id", 0)))
+        elif path == "/api/study/languages/review":
+            self._json(study_store.review_language_word(data.get("word_id", 0), data.get("result", "wrong")))
+        elif path == "/api/study/notes/create":
+            self._json(study_store.create_note(data.get("target_type", "study"), data.get("target_id", 0), data.get("note_text", "")))
+        elif path == "/api/study/settings/delete":
+            self._json(study_store.delete_action(data.get("action", ""), data.get("confirm_text", ""), data.get("target_id", 0)))
+        elif path == "/api/benchmarks/run":
             self._json(start_benchmarks(STATE))
         elif path == "/api/reports/generate":
             self._json(start_report(STATE))
@@ -202,6 +294,7 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
 
 def make_server(host=HOST, port=PORT):
     ensure_runtime_dirs()
+    study_store.initialize()
     return ThreadingHTTPServer((host, port), DiagnosticsHandler)
 
 
@@ -212,3 +305,15 @@ def serve_forever(host=HOST, port=PORT):
     finally:
         stop_preview(STATE)
         server.server_close()
+
+
+def _query_str(query, key, default=""):
+    values = query.get(key)
+    return str(values[0]) if values else default
+
+
+def _query_int(query, key, default=0):
+    try:
+        return int(_query_str(query, key, str(default)))
+    except ValueError:
+        return default

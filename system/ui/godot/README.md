@@ -91,6 +91,22 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Network, Camera, Logs, and Reports open Diagnostics with the selected tab active.
 - Other Quick Shelf tiles show visible planned status instead of silently doing nothing.
 - Quick Shelf scroll drag is limited to the scrollbar strip so it does not block normal tile taps.
+- Study opens the NeXa Learn Study screen from Menu or Quick Shelf.
+- NeXa Learn includes Smart Study, Flashcards, Quizzes, Languages, Study Stats, History, and Settings pages.
+- Smart Study is the user-facing focus/session builder and supports custom focus and break segments.
+- Smart Study segment lists scroll when they grow, while controls stay in a separate right-side column.
+- Smart Study keeps Topic/Goal clear of the right controls, scrolls long segment lists, shows summary under the table, enforces alternating focus/break segments, and shows Stop/Finish during active sessions.
+- Smart Study note prompts are tied to completed focus work, not break/rest segments.
+- Face Home shows a running study session as plain `Focus: MM:SS` or `Break: MM:SS` text without a box.
+- Study uses a reusable on-screen text input overlay for local touch entry.
+- Physical keyboard input works while the on-screen keyboard remains visible.
+- Flashcards uses one selected set at a time and guards Add Question, Start Study, and Delete until a set is selected.
+- Flashcards uses a separate practice screen with answer checking, reveal answer, I know this, Not sure, I don't know, Next, Finish, Continue, and bottom green/red feedback.
+- Quizzes uses one selected quiz at a time and guards Add Question, Start Quiz, and Delete until a quiz is selected.
+- Quizzes uses a separate solve screen with visible A/B/C/D answer text, selected correct-answer creation, wrong feedback, marked review, and delete confirmation.
+- Language Learning uses selected-list edit and separate practice screens with typed meaning checks, reveal answer, Correct/Wrong outcomes, and delete word/list actions.
+- Study delete-all uses a two-step confirmation before sending the delete request.
+- Study Stats is available inside Study, in Diagnostics, and from Quick Shelf when selected.
 - Display, Sound, Network, Remote, Diagnostics, Safety, About, and Exit NeXa pages are represented.
 - About shows NeXa ToTem project, author Andrzej Dul, DevDul, hardware, software, features, settings, and safety notes.
 - Safety and Exit NeXa actions are planned/safe only; the UI does not power off or reboot the Raspberry Pi.

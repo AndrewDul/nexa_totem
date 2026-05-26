@@ -188,12 +188,96 @@ class GodotUiStructureTests(unittest.TestCase):
         menu_tap = main.split("func _handle_menu_tap", 1)[1].split("func _handle_diagnostics_tap", 1)[0]
         self.assertIn('tile["title"] == "Time"', menu_tap)
         self.assertIn("_open_clock()", menu_tap)
+        self.assertIn('tile["title"] == "Study"', menu_tap)
+        self.assertIn('_open_study("home")', menu_tap)
         self.assertIn('tile["title"] == "Diagnostics"', menu_tap)
         self.assertIn("_open_diagnostics()", menu_tap)
         self.assertIn('tile["title"] == "Settings"', menu_tap)
         self.assertIn("_open_settings()", menu_tap)
         time_branch = menu_tap.split('tile["title"] == "Time"', 1)[1].split('elif tile["title"] == "Diagnostics"', 1)[0]
         self.assertNotIn("_open_placeholder", time_branch)
+
+    def test_study_screen_and_pages_are_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        for term in [
+            'nav.current_screen == "Study"',
+            "STUDY_TILES",
+            "func _draw_study",
+            "_draw_study_smart",
+            "_draw_study_flashcards",
+            "_draw_study_quizzes",
+            "_draw_study_languages",
+            "_draw_study_history",
+            "_draw_study_settings",
+            "_draw_study_stats",
+            "_draw_text_input_overlay",
+            "_commit_text_input",
+            "_draw_study_timer_overlay",
+        ]:
+            self.assertIn(term, main)
+        study_tiles = main.split("const STUDY_TILES", 1)[1].split("var nav", 1)[0]
+        for tile in ["Smart Study", "Flashcards", "Quizzes", "Languages", "Study Stats", "History", "Settings"]:
+            self.assertIn(tile, main)
+            self.assertIn(tile, study_tiles)
+        self.assertNotIn('"Pomodoro"', study_tiles)
+        self.assertNotIn('"Back"', study_tiles)
+        for endpoint in [
+            "/api/study/stats",
+            "/api/study/smart/start",
+            "/api/study/smart/status",
+            "/api/study/flashcards/decks",
+            "/api/study/quizzes",
+            "/api/study/languages/lists",
+            "/api/study/history",
+        ]:
+            self.assertIn(endpoint, main)
+        self.assertIn('percent <= 0.05', main)
+        self.assertIn('percent <= 0.30', main)
+        self.assertIn('percent <= 0.50', main)
+        self.assertIn('_open_study("stats")', main)
+        self.assertIn("_draw_diagnostics_study_stats", main)
+        overlay = main.split("func _draw_study_timer_overlay", 1)[1].split("func _settings_color", 1)[0]
+        self.assertIn('": %02d:%02d"', overlay)
+        self.assertNotIn("_draw_rounded_rect", overlay)
+        self.assertNotIn("_draw_rounded_outline", overlay)
+        self.assertIn("InputEventKey", main)
+        for text in ["Reveal Answer", "I know this", "Not sure", "I don't know", "Finish", "Continue"]:
+            self.assertIn(text, main)
+        for text in ['"A"', '"B"', '"C"', '"D"', "Save question", "Mark for review", "Wrong"]:
+            self.assertIn(text, main)
+        self.assertIn("study_delete_confirm_open = true", main)
+        confirm_branch = main.split("if study_delete_confirm_open:", 1)[1].split("func _study_list_count", 1)[0]
+        self.assertIn('confirm_text": "DELETE_STUDY_DATA"', confirm_branch)
+        self.assertIn("_study_segment_scroll_rect", main)
+        self.assertIn("study_segment_scroll_y", main)
+        smart_draw = main.split("func _draw_study_smart", 1)[1].split("func _draw_study_flashcards", 1)[0]
+        self.assertIn("_draw_scrollbar(view_rect, study_segment_scroll_y", smart_draw)
+        self.assertIn("_study_current_segment_is_focus()", smart_draw)
+        self.assertIn("note_prompt_pending", main)
+        self.assertIn("Rect2(44, 118, 350, 36)", smart_draw)
+        self.assertIn("Focus total", smart_draw)
+        self.assertIn('"Stop"', smart_draw)
+        self.assertIn('"Finish"', smart_draw)
+        self.assertIn('"Skip"', smart_draw)
+        self.assertIn('"After focus, add a break."', main)
+        self.assertIn('"After break, add focus."', main)
+        flash_tap = main.split("func _handle_study_flashcards_tap", 1)[1].split("func _submit_flashcard_review", 1)[0]
+        self.assertIn('"Select one flashcard set first."', flash_tap)
+        self.assertIn("study_flashcard_delete_confirm_open", flash_tap)
+        self.assertIn("study_flashcard_mode = \"practice\"", main)
+        self.assertIn("Check Answer", main)
+        self.assertIn("_draw_study_feedback", main)
+        self.assertIn("_check_flashcard_answer", main)
+        self.assertIn("study_flashcard_answer_checked", main)
+        quiz_tap = main.split("func _handle_study_quizzes_tap", 1)[1].split("func _submit_quiz_answer", 1)[0]
+        self.assertIn('"Select one quiz first."', quiz_tap)
+        self.assertIn("study_quiz_delete_confirm_open", quiz_tap)
+        for text in ["New Quiz", "Add Question", "Start Quiz", "Delete Quiz"]:
+            self.assertIn(text, main)
+        for text in ["answer_a", "answer_b", "answer_c", "answer_d", "correct_answer_text"]:
+            self.assertIn(text, main)
+        for text in ["New List", "Add Word", "Edit List", "Start Practice", "Delete List", "Select one language list first.", "Delete Word", "study_language_answer_text"]:
+            self.assertIn(text, main)
 
     def test_control_center_cards_are_represented(self):
         main = self.read(GODOT_DIR / "scripts/main.gd")

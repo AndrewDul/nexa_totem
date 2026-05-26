@@ -371,3 +371,87 @@ I added Appearance color settings for time, hour, minute, second, date, day, mon
 I made grouped Time color and Date color updates apply to their related parts.
 
 I kept the UI fixed at 640x480 and OpenGL/Compatibility.
+
+## 2026-05-26 — NeXa Learn Study MVP
+
+I added the NeXa Learn / Study module.
+
+I added a local SQLite database under var/data/study/nexa_study.db.
+
+I added Pomodoro topics with duplicate/similar topic checks.
+
+I added Flashcard decks with persistent cards, statuses, notes, and review progress.
+
+I added Quizzes with persistent questions, attempts, wrong/marked status, and progress.
+
+I added Language Learning with word lists, pronunciation, meanings, review counts, and mastered logic.
+
+I added Smart Study sessions and notes.
+
+I added Study History and Study Settings.
+
+I added Study Stats in Study, Diagnostics, and Quick Shelf.
+
+I kept web panel and remote text input planned for later.
+
+I kept the UI fixed at 640x480 and OpenGL/Compatibility.
+
+## 2026-05-26 — Study Interaction Completion
+
+I merged Pomodoro-style timing into Smart Study.
+
+I changed the Face Home study timer overlay to plain Focus text.
+
+I added custom Smart Study focus/break segments with validation.
+
+I added optional break notes.
+
+I completed the Flashcards editor and review flow with typed answer, reveal answer, I know this, Not sure, and I don't know.
+
+I completed the Quiz editor and solving flow with selectable correct answer A/B/C/D.
+
+I added the Language Learning Wrong review path.
+
+I made Study delete actions two-step safe confirmations.
+
+I added physical keyboard support while keeping the on-screen keyboard.
+
+I removed the Back tile from Study Home.
+
+## 2026-05-26 — Study UX Correction After Manual Test
+
+I added scroll support for long Smart Study segment lists.
+
+I moved Smart Study controls so they do not cover segments.
+
+I made break note controls appear only during breaks.
+
+I clarified Stop and Finish behaviour for active Smart Study sessions.
+
+I redesigned Flashcards around a single selected set, answer checking, reveal answer, review confidence, and a 50-correct mastered threshold.
+
+I redesigned Quizzes around a single selected quiz, A/B/C/D question creation, selected correct answer, and solve mode.
+
+I kept physical keyboard and on-screen keyboard working together.
+
+I kept Study Home without Pomodoro and Back tiles.
+
+## 2026-05-26 — Study Practice Window UX Finalization
+
+I fixed Smart Study layout so Topic/Goal no longer sit under right-side controls.
+
+I added segment-list scrolling and moved summary under the segment table.
+
+I enforced alternating focus/break segment rules.
+
+I moved note prompts to completed focus segments instead of breaks.
+
+I redesigned Flashcards into a selected-set list plus separate practice screen.
+
+I added clear answer checking, reveal answer, bottom feedback, and Finish/Continue for Flashcards.
+
+I redesigned Quizzes into a selected-quiz list plus separate solve screen with visible A/B/C/D answers.
+
+I redesigned Languages into selected-list edit and practice screens with typed meaning checking.
+
+I kept the UI touch-friendly on 640x480.

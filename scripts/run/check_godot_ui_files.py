@@ -64,6 +64,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     live_api = REPO_ROOT / "system/services/diagnostics/live_api.py"
     camera_preview = REPO_ROOT / "system/services/diagnostics/camera_preview.py"
     settings_store = REPO_ROOT / "system/services/settings/settings_store.py"
+    study_store = REPO_ROOT / "system/services/study/study_store.py"
     api_client = scripts_dir / "diagnostics_api_client.gd"
 
     project_text = read_text(project_godot)
@@ -74,6 +75,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     live_api_text = read_text(live_api)
     camera_preview_text = read_text(camera_preview)
     settings_store_text = read_text(settings_store)
+    study_store_text = read_text(study_store)
     live_collectors_text = read_text(REPO_ROOT / "system/services/diagnostics/live_collectors.py")
     job_runner_text = read_text(REPO_ROOT / "system/services/diagnostics/job_runner.py")
     all_text = project_text + "\n" + read_text(main_scene)
@@ -105,6 +107,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("live_api_exists", live_api.exists(), "Diagnostics live API exists.")
     add("camera_preview_exists", camera_preview.exists(), "Camera live preview worker exists.")
     add("settings_store_exists", settings_store.exists(), "Settings store exists.")
+    add("study_store_exists", study_store.exists(), "Study store exists.")
     add("api_localhost", "127.0.0.1" in live_api_text and "8769" in live_api_text, "API binds localhost port 8769.")
 
     for screen_name in SCREEN_NAMES:
@@ -117,6 +120,9 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("local_runtime_helpers", "func _draw_card" in main_text and "func _draw_pill" in main_text and "func _draw_soft_panel" in main_text and "func _draw_tile" in main_text, "Local callable drawing helpers exist in main.gd.")
     add("no_themescript_runtime_helper_calls", "ThemeScript.draw_card" not in main_text and "ThemeScript.draw_pill" not in main_text and "ThemeScript.draw_soft_panel" not in main_text and "ThemeScript.draw_tile" not in main_text, "main.gd no longer calls ThemeScript drawing helpers at runtime.")
     add("settings_api_endpoints", "/api/settings" in live_api_text and "/api/settings/update" in live_api_text and "/api/settings/update-many" in live_api_text and "/api/privacy/pin/set" in live_api_text and "/api/privacy/pin/verify" in live_api_text and "/api/privacy/status" in live_api_text, "Settings and privacy API endpoints exist.")
+    add("study_api_endpoints", "/api/study/overview" in live_api_text and "/api/study/pomodoro/start" in live_api_text and "/api/study/flashcards/decks/create" in live_api_text and "/api/study/quizzes/create" in live_api_text and "/api/study/languages/lists/create" in live_api_text and "/api/study/stats" in live_api_text, "Study API endpoints exist.")
+    add("study_sqlite_store", "sqlite3" in study_store_text and "var/data/study/nexa_study.db" in study_store_text and "NEXA_STUDY_DB_PATH" in study_store_text, "Study store uses local SQLite with test DB override.")
+    add("study_duplicate_similar", "normalize_name" in study_store_text and "SequenceMatcher" in study_store_text and '"duplicate"' in study_store_text and '"similar"' in study_store_text, "Study store has duplicate and similar detection.")
     add("pin_hash_hidden", "pin_hash" in settings_store_text and "pin_salt" in settings_store_text and "safe_settings" in settings_store_text and "SENSITIVE_KEYS" in settings_store_text, "Settings API can remove PIN hash and salt.")
     add("pin_four_digits", "valid_pin" in settings_store_text and "len(pin) == 4" in settings_store_text and "pin.isdigit()" in settings_store_text, "PIN is constrained to four digits.")
     add("private_settings", "private_notifications_enabled" in settings_store_text and "private_reminders_enabled" in settings_store_text, "Private notification and reminder settings exist.")
@@ -161,6 +167,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("menu_two_columns", "index % 2" in main_text and "300.0" in main_text, "Menu uses two columns.")
     menu_tap_func = main_text.split("func _handle_menu_tap", 1)[1].split("func _handle_diagnostics_tap", 1)[0] if "func _handle_menu_tap" in main_text and "func _handle_diagnostics_tap" in main_text else ""
     add("menu_time_opens_clock", 'tile["title"] == "Time"' in menu_tap_func and "_open_clock()" in menu_tap_func, "Menu Time tile opens Clock.")
+    add("menu_study_opens_study", 'tile["title"] == "Study"' in menu_tap_func and '_open_study("home")' in menu_tap_func, "Menu Study tile opens Study.")
     for subtitle in ["Clock", "Focus", "Alerts", "Events", "To-do", "Play", "System", "Setup"]:
         add(f"menu_subtitle_{subtitle}", f'"subtitle": "{subtitle}"' in main_text, f"Menu subtitle {subtitle} is represented.")
     add("control_center_cards", "Control Center" in main_text and "var controls: Array" in main_text and "_draw_notification" in main_text, "Control Center card drawing is represented.")
@@ -210,6 +217,28 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     diagnostics_tab_func = main_text.split("func _open_diagnostics_tab", 1)[1].split("func _open_settings_page", 1)[0] if "func _open_diagnostics_tab" in main_text and "func _open_settings_page" in main_text else ""
     add("quick_shelf_diagnostics_tab_order", "_open_diagnostics()" in diagnostics_tab_func and "active_tab = tab_name" in diagnostics_tab_func and diagnostics_tab_func.find("_open_diagnostics()") < diagnostics_tab_func.find("active_tab = tab_name") and "_request_active_diagnostics_tab()" in diagnostics_tab_func, "Quick Shelf opens Diagnostics before selecting and requesting the chosen tab.")
     add("quick_shelf_touch_routing", "InputEventScreenTouch" in main_text and "InputEventScreenDrag" in main_text, "Touch taps and drags route through the same gesture path.")
+    add("quick_shelf_study_actions", '"Study Stats"' in main_text and '_open_study("home")' in main_text and '_open_study("stats")' in main_text, "Quick Shelf Study and Study Stats actions are represented.")
+    add("study_screen", 'nav.current_screen == "Study"' in main_text and "func _draw_study" in main_text and "STUDY_TILES" in main_text, "Study screen exists.")
+    study_tiles_const = main_text.split("const STUDY_TILES", 1)[1].split("var nav", 1)[0] if "const STUDY_TILES" in main_text and "var nav" in main_text else ""
+    add("study_home_tiles", all(tile in study_tiles_const for tile in ["Smart Study", "Flashcards", "Quizzes", "Languages", "Study Stats", "History", "Settings"]) and '"Pomodoro"' not in study_tiles_const and '"Back"' not in study_tiles_const, "Study Home has Smart Study and no Pomodoro/Back tile.")
+    add("study_pages", all(term in main_text for term in ["_draw_study_smart", "_draw_study_flashcards", "_draw_study_quizzes", "_draw_study_languages", "_draw_study_history", "_draw_study_settings", "_draw_study_stats"]), "Study pages are represented.")
+    add("study_text_input", "text_input_open" in main_text and "_draw_text_input_overlay" in main_text and "_commit_text_input" in main_text and "event.unicode" in main_text and "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?!-/:" in main_text, "Reusable Study text input overlay supports physical and on-screen keyboard input.")
+    overlay_func = main_text.split("func _draw_study_timer_overlay", 1)[1].split("func _settings_color", 1)[0] if "func _draw_study_timer_overlay" in main_text and "func _settings_color" in main_text else ""
+    add("study_timer_overlay", "_draw_study_timer_overlay" in main_text and "remaining_seconds" in overlay_func and "planned_seconds" in overlay_func and "_draw_rounded_rect" not in overlay_func and "_draw_rounded_outline" not in overlay_func, "Face Home timer overlay is plain text only.")
+    add("study_timer_color_thresholds", "percent <= 0.05" in main_text and "percent <= 0.30" in main_text and "percent <= 0.50" in main_text, "Timer overlay color threshold logic exists.")
+    smart_draw = main_text.split("func _draw_study_smart", 1)[1].split("func _draw_study_flashcards", 1)[0] if "func _draw_study_smart" in main_text and "func _draw_study_flashcards" in main_text else ""
+    add("study_smart_segments", "study_segments" in main_text and "+ Focus" in main_text and "+ Break" in main_text and "_validate_study_segments" in main_text and "/api/study/smart/start" in main_text, "Smart Study custom segment builder exists.")
+    add("study_smart_segment_scroll", "_study_segment_scroll_rect" in main_text and "study_segment_scroll_y" in main_text and "_draw_scrollbar(view_rect, study_segment_scroll_y" in smart_draw, "Smart Study segment list scroll exists.")
+    add("study_smart_focus_note_controls", "_study_current_segment_is_focus()" in smart_draw and "note_prompt_pending" in main_text and '"What did you learn?"' in main_text and '"Add note"' in smart_draw and '"Skip"' in smart_draw and '"Stop"' in smart_draw and '"Finish"' in smart_draw, "Smart Study focus-note prompt and active Stop/Finish exist.")
+    add("study_smart_layout_final", "Rect2(44, 118, 350, 36)" in smart_draw and "Rect2(44, 164, 350, 36)" in smart_draw and "Focus total" in smart_draw and "Validation:" in smart_draw and '"After focus, add a break."' in main_text and '"After break, add focus."' in main_text, "Smart Study fields, summary, and alternating guards are represented.")
+    add("study_flashcards_complete", all(term in main_text for term in ["New Flashcards", "Delete Flashcards", "Select one flashcard set first.", "Check Answer", "Reveal Answer", "I know this", "Not sure", "I don't know", "typed_answer", "revealed_answer", "Finish", "Continue", "study_flashcard_delete_confirm_open", 'study_flashcard_mode = "practice"', "_draw_study_feedback"]), "Flashcards single-selection editor/practice flow is represented.")
+    add("study_flashcards_mastered_50", "correct >= 50" in study_store_text, "Flashcards mastered threshold requires 50 correct answers.")
+    add("study_quiz_complete", all(term in main_text for term in ["New Quiz", "Add Question", "Start Quiz", "Delete Quiz", "Select one quiz first.", "Save question", "correct_answer", "study_pending_correct_answer", "Mark for review", "Repeat wrong", "Repeat marked", "study_quiz_delete_confirm_open", "answer_a", "answer_b", "answer_c", "answer_d", "correct_answer_text"]), "Quiz single-selection editor and solve flow is represented.")
+    add("study_language_complete", all(term in main_text + live_api_text + study_store_text for term in ["New List", "Add Word", "Edit List", "Start Practice", "Delete List", "Select one language list first.", "Check Answer", "Reveal Answer", '"Correct"', '"Wrong"', "Delete Word", "study_language_mode", "study_language_answer_text", "correct_count >= 50", "/api/study/languages/practice/next", "/api/study/languages/list", "delete_language_word"]), "Language list edit and typed practice flow is represented.")
+    settings_tap = main_text.split("func _handle_study_settings_tap", 1)[1].split("func _study_list_count", 1)[0] if "func _handle_study_settings_tap" in main_text and "func _study_list_count" in main_text else ""
+    add("study_delete_two_step", "if study_delete_confirm_open:" in settings_tap and "study_delete_confirm_open = true" in settings_tap and 'confirm_text": "DELETE_STUDY_DATA"' in settings_tap and "Use Delete all first" in settings_tap, "Study delete all requires confirmation state before API call.")
+    add("study_api_calls", all(endpoint in main_text for endpoint in ["/api/study/stats", "/api/study/smart/start", "/api/study/smart/status", "/api/study/flashcards/decks", "/api/study/quizzes", "/api/study/languages/lists", "/api/study/history"]), "Godot calls Study APIs.")
+    add("diagnostics_study_stats", '"Study Stats"' in main_text and "/api/study/stats" in main_text and "_draw_diagnostics_study_stats" in main_text, "Diagnostics has Study Stats tab.")
     add("about_page", "Andrzej Dul" in main_text and "DevDul" in main_text and "Raspberry Pi 5 2GB" in main_text and "OpenGL ES Compatibility" in main_text, "About page includes project, author, hardware, software, and safety content.")
     add("no_visible_face_home_label", '_draw_text("Face Home"' not in main_text, "Face Home label is not drawn on the home screen.")
     add("vertical_eyes", "_draw_vertical_capsule" in face_text and "_draw_bean_eye" in face_text, "Vertical bean eyes are represented.")
