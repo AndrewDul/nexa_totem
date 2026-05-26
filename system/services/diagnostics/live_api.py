@@ -28,6 +28,7 @@ from system.services.diagnostics.live_state import LiveState, ensure_runtime_dir
 from system.services.settings import settings_store
 from system.services.study import study_store
 from system.services.reminders import reminders_store
+from system.services.calendar import calendar_store
 
 
 HOST = "127.0.0.1"
@@ -146,6 +147,14 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
                 self._json(reminders_store.due())
             elif path == "/api/reminders/settings/stats":
                 self._json(reminders_store.settings_stats())
+            elif path == "/api/calendar/month":
+                self._json(calendar_store.month(_query_int(query, "year"), _query_int(query, "month"), _query_str(query, "selected_date", "")))
+            elif path == "/api/calendar/day":
+                self._json(calendar_store.day(_query_str(query, "date", "")))
+            elif path == "/api/calendar/due":
+                self._json(calendar_store.due())
+            elif path == "/api/calendar/settings/stats":
+                self._json(calendar_store.settings_stats())
             elif path == "/api/overview":
                 self._json(cached(STATE, "overview", TTL_SECONDS["overview"], lambda: overview_data(STATE)))
             elif path == "/api/system":
@@ -259,6 +268,16 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
             self._json(reminders_store.mark_triggered(data.get("id", 0)))
         elif path == "/api/reminders/snooze":
             self._json(reminders_store.snooze(data.get("id", 0), data.get("minutes", 5)))
+        elif path == "/api/calendar/events/create":
+            self._json(calendar_store.create(data.get("title", ""), data.get("description", ""), data.get("start_date", ""), data.get("start_time", ""), data.get("reminder_minutes_before", 0), data.get("repeat_type", "none"), data.get("snooze_minutes", 0)))
+        elif path == "/api/calendar/events/update":
+            self._json(calendar_store.update(data.get("id", 0), data.get("title", ""), data.get("description", ""), data.get("start_date", ""), data.get("start_time", ""), data.get("reminder_minutes_before", 0), data.get("repeat_type", "none")))
+        elif path == "/api/calendar/events/delete":
+            self._json(calendar_store.delete(data.get("id", 0), data.get("confirm_text", "")))
+        elif path == "/api/calendar/dismiss":
+            self._json(calendar_store.dismiss(data.get("event_id", data.get("id", 0)), data.get("occurrence_start", "")))
+        elif path == "/api/calendar/snooze":
+            self._json(calendar_store.snooze(data.get("event_id", data.get("id", 0)), data.get("minutes", 10)))
         elif path == "/api/benchmarks/run":
             self._json(start_benchmarks(STATE))
         elif path == "/api/reports/generate":
@@ -316,6 +335,8 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
 def make_server(host=HOST, port=PORT):
     ensure_runtime_dirs()
     study_store.initialize()
+    reminders_store.initialize()
+    calendar_store.initialize()
     return ThreadingHTTPServer((host, port), DiagnosticsHandler)
 
 

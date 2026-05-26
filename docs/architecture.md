@@ -519,3 +519,19 @@ I made the Notifications section generic, with "No notifications" as empty state
 I added scroll support for many notification rows.
 
 I kept notification dismissal separate from deleting reminder records.
+
+## 2026-05-26 — Local Calendar App
+
+I added the Calendar app in Menu.
+
+I added a local SQLite calendar database under var/data/calendar/nexa_calendar.db.
+
+I added a monthly 42-cell calendar grid with Previous/Next navigation.
+
+I added weekday labels M T W T F S S, Sunday styling, today highlight, selected day highlight, and event indicators.
+
+I added day details, Add/Edit/Delete event flows, reminders, snooze, and repeat options.
+
+I added lightweight calendar reminder polling and generic notifications integration.
+
+I kept the UI fixed at 640x480 and OpenGL/Compatibility.

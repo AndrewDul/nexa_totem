@@ -66,6 +66,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     settings_store = REPO_ROOT / "system/services/settings/settings_store.py"
     study_store = REPO_ROOT / "system/services/study/study_store.py"
     reminders_store = REPO_ROOT / "system/services/reminders/reminders_store.py"
+    calendar_store = REPO_ROOT / "system/services/calendar/calendar_store.py"
     api_client = scripts_dir / "diagnostics_api_client.gd"
 
     project_text = read_text(project_godot)
@@ -78,6 +79,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     settings_store_text = read_text(settings_store)
     study_store_text = read_text(study_store)
     reminders_store_text = read_text(reminders_store)
+    calendar_store_text = read_text(calendar_store)
     live_collectors_text = read_text(REPO_ROOT / "system/services/diagnostics/live_collectors.py")
     job_runner_text = read_text(REPO_ROOT / "system/services/diagnostics/job_runner.py")
     all_text = project_text + "\n" + read_text(main_scene)
@@ -224,6 +226,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("quick_shelf_touch_routing", "InputEventScreenTouch" in main_text and "InputEventScreenDrag" in main_text, "Touch taps and drags route through the same gesture path.")
     add("quick_shelf_study_actions", '"Study Stats"' in main_text and '_open_study("home")' in main_text and '_open_study("stats")' in main_text, "Quick Shelf Study and Study Stats actions are represented.")
     add("quick_shelf_reminders_action", 'tile_name == "Reminders"' in main_text and "_open_reminders()" in main_text, "Quick Shelf Reminders opens Reminders.")
+    add("quick_shelf_calendar_action", 'tile_name == "Calendar"' in main_text and "_open_calendar()" in main_text, "Quick Shelf Calendar opens Calendar.")
     add("reminders_screen", 'nav.current_screen == "Reminders"' in main_text and "func _draw_reminders" in main_text and "_handle_reminders_tap" in main_text, "Reminders screen exists.")
     add("menu_reminders_action", 'tile["title"] == "Reminders"' in main_text and "_open_reminders()" in main_text, "Menu Reminders opens Reminders.")
     add("reminders_tables", "Upcoming" in main_text and "Past" in main_text and "reminders_upcoming_scroll_y" in main_text and "reminders_past_scroll_y" in main_text and "_draw_reminders_table" in main_text, "Reminders Upcoming and Past scrollable tables exist.")
@@ -241,6 +244,25 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("control_center_notification_dismiss_safe", '/api/reminders/dismiss' in notification_dismiss_func and '/api/reminders/delete' not in notification_dismiss_func, "Notification dismissal calls reminder dismiss and does not delete reminder records.")
     add("control_center_notification_private_locked", '"Private reminder locked"' in main_text and '"Enter PIN to view"' in main_text and "requires_pin" in main_text, "Private reminder notifications use locked placeholders.")
     add("control_center_reminders_card", '"Reminders"' in main_text and "notifications_data" in main_text and "_draw_notifications_section_safe" in main_text, "Control Center Reminders notifications section exists.")
+    add("calendar_service_files", calendar_store.exists() and "NEXA_CALENDAR_DB_PATH" in calendar_store_text and "var/data/calendar/nexa_calendar.db" in calendar_store_text, "Calendar local SQLite service exists.")
+    add("calendar_api_endpoints", all(endpoint in live_api_text for endpoint in ["/api/calendar/month", "/api/calendar/day", "/api/calendar/events/create", "/api/calendar/events/update", "/api/calendar/events/delete", "/api/calendar/due", "/api/calendar/dismiss", "/api/calendar/snooze", "/api/calendar/settings/stats"]), "Calendar API endpoints exist.")
+    add("calendar_screen", 'nav.current_screen == "Calendar"' in main_text and "func _draw_calendar" in main_text and "func _handle_calendar_tap" in main_text, "Calendar screen exists.")
+    add("menu_calendar_action", 'tile["title"] == "Calendar"' in main_text and "_open_calendar()" in main_text, "Menu Calendar opens Calendar.")
+    add("calendar_header_nav", '"Previous"' in main_text and '"Next"' in main_text and "_calendar_change_month(-1)" in main_text and "_calendar_change_month(1)" in main_text, "Calendar header has Previous and Next navigation.")
+    add("calendar_header_nav_spacing", 'Rect2(330, 30, 84, 30)' in main_text and 'Rect2(422, 30, 74, 30)' in main_text and 'Rect2(520, 22, 92, 34)' in main_text and 'Rect2(466, 30, 78, 30)' not in main_text.split("func _draw_calendar", 1)[1].split("func _draw_calendar_weekdays", 1)[0], "Calendar Previous/Next buttons are left of Home without overlap.")
+    add("calendar_month_api", "/api/calendar/month?year=" in main_text and "month_name" in main_text and "calendar_year" in main_text, "Calendar month name and year are drawn from API data.")
+    add("calendar_weekday_row", '["M", "T", "W", "T", "F", "S", "S"]' in main_text and "_draw_calendar_weekdays" in main_text, "Calendar weekday row M T W T F S S exists.")
+    add("calendar_42_cells", "for index in range(42)" in main_text and "func _calendar_cell_rect" in main_text, "Calendar grid draws 42 cells.")
+    add("calendar_day_numbers_int", 'var day_number := int(cell.get("day_number", 0))' in main_text and 'var day_text := str(day_number) if day_number > 0 else ""' in main_text and 'str(cell.get("day_number", ""))' not in main_text, "Calendar day numbers are rendered as integer strings.")
+    add("calendar_styles", "is_sunday" in main_text and "is_today" in main_text and "is_selected" in main_text and "Color(1.0, 0.45, 0.45" in main_text and "ThemeScript.BLUE" in main_text, "Calendar Sunday, today, and selected styles exist.")
+    add("calendar_event_indicators", "func _draw_calendar_event_indicator" in main_text and "events_count" in main_text and '"3+"' in main_text and "has_reminder" in main_text, "Calendar event indicators exist.")
+    add("calendar_day_details", "func _draw_calendar_day_details" in main_text and '"Add"' in main_text and '"Edit"' in main_text and '"Delete"' in main_text and '"Select one event first."' in main_text, "Calendar day details and event selection exist.")
+    add("calendar_form", "func _draw_calendar_form" in main_text and "calendar_form_title" in main_text and "calendar_form_description" in main_text and "calendar_form_date" in main_text and "calendar_form_time" in main_text and '{"keyboard_mode": "datetime"}' in main_text, "Calendar Add/Edit event form exists with datetime keyboard.")
+    add("calendar_options", all(term in main_text for term in ["Off / At time / 5 min before / 15 min before / 1 hour before", "Snooze: Off / 5 min / 10 min / 30 min", "Repeat: None / Daily / Weekly / Monthly / Yearly", "_calendar_cycle_reminder", "_calendar_cycle_snooze", "_calendar_cycle_repeat"]), "Calendar reminder, snooze, and repeat options exist.")
+    add("calendar_delete_confirm", '"Delete selected event?"' in main_text and "DELETE_CALENDAR_EVENT" in main_text and '"/api/calendar/events/delete"' in main_text, "Calendar delete confirmation exists.")
+    add("calendar_due_polling", "calendar_poll_accumulator" in main_text and "calendar_interval := 5.0 if calendar_due_modal_open else 30.0" in main_text and 'api.request_get("/api/calendar/due")' in main_text, "Calendar due polling exists and is not every frame.")
+    add("calendar_notifications", '"type": "calendar"' in main_text and '"Calendar"' in main_text and '"/api/calendar/dismiss"' in main_text and '"/api/calendar/snooze"' in main_text and "calendar_due_modal_open" in main_text and "_dismiss_pending_calendar_notification" in main_text, "Calendar due notifications integrate with generic notifications.")
+    add("calendar_no_fake_data", '"Study Java"' not in main_text and '"Dentist"' not in main_text and "No fake" not in main_text, "Calendar UI has no hardcoded fake event rows.")
     add("study_screen", 'nav.current_screen == "Study"' in main_text and "func _draw_study" in main_text and "STUDY_TILES" in main_text, "Study screen exists.")
     study_tiles_const = main_text.split("const STUDY_TILES", 1)[1].split("var nav", 1)[0] if "const STUDY_TILES" in main_text and "var nav" in main_text else ""
     add("study_home_tiles", all(tile in study_tiles_const for tile in ["Smart Study", "Flashcards", "Quizzes", "Languages", "Study Stats", "History", "Settings"]) and '"Pomodoro"' not in study_tiles_const and '"Back"' not in study_tiles_const, "Study Home has Smart Study and no Pomodoro/Back tile.")

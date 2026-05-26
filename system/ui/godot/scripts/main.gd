@@ -147,6 +147,28 @@ var notification_swipe_start_x := 0.0
 var notification_swipe_start_y := 0.0
 var notification_swipe_active_id := ""
 var notification_scroll_y := 0.0
+var calendar_data := {}
+var calendar_day_data := {}
+var calendar_due_data := {}
+var calendar_status_text := ""
+var calendar_year := 0
+var calendar_month := 0
+var calendar_selected_date := ""
+var calendar_selected_event_id := 0
+var calendar_selected_event := {}
+var calendar_mode := "month"
+var calendar_form_title := ""
+var calendar_form_description := ""
+var calendar_form_date := ""
+var calendar_form_time := ""
+var calendar_form_reminder := 0
+var calendar_form_snooze := 10
+var calendar_form_repeat := "none"
+var calendar_event_scroll_y := 0.0
+var calendar_poll_accumulator := 0.0
+var calendar_due_modal_open := false
+var calendar_pending_due_event_id := 0
+var calendar_pending_due_occurrence := ""
 var study_current_page := "home"
 var study_scroll_y := 0.0
 var study_data := {}
@@ -381,7 +403,7 @@ func _handle_gesture(action: String, position: Vector2) -> void:
 	_request_redraw()
 
 func _handle_tap(position: Vector2) -> void:
-	if reminders_due_modal_open and _handle_due_reminder_modal_tap(position):
+	if (reminders_due_modal_open or calendar_due_modal_open) and _handle_due_notification_modal_tap(position):
 		return
 	if text_input_open:
 		_handle_text_input_tap(position)
@@ -416,6 +438,9 @@ func _handle_tap(position: Vector2) -> void:
 	if nav.current_screen == "Reminders":
 		_handle_reminders_tap(position)
 		return
+	if nav.current_screen == "Calendar":
+		_handle_calendar_tap(position)
+		return
 
 func _handle_menu_tap(position: Vector2) -> void:
 	for index in range(MENU_TILES.size()):
@@ -428,6 +453,8 @@ func _handle_menu_tap(position: Vector2) -> void:
 				_open_study("home")
 			elif tile["title"] == "Reminders":
 				_open_reminders()
+			elif tile["title"] == "Calendar":
+				_open_calendar()
 			elif tile["title"] == "Diagnostics":
 				_open_diagnostics()
 			elif tile["title"] == "Settings":
@@ -557,6 +584,14 @@ func _open_notification_source(notification: Dictionary) -> void:
 		_open_reminders()
 		_request_redraw()
 		return
+	if str(notification.get("type", "")) == "calendar":
+		calendar_selected_event_id = int(notification.get("source_id", 0))
+		calendar_selected_date = str(notification.get("source_date", calendar_selected_date))
+		notification_detail_modal_open = false
+		notification_selected = {}
+		_open_calendar()
+		_request_redraw()
+		return
 
 func _handle_settings_tap(position: Vector2) -> void:
 	if settings_dropdown_open:
@@ -653,6 +688,9 @@ func _activate_quick_shelf_tile(tile_name: String) -> void:
 	elif tile_name == "Reminders":
 		quick_shelf_status_text = "Opening Reminders"
 		_open_reminders()
+	elif tile_name == "Calendar":
+		quick_shelf_status_text = "Opening Calendar"
+		_open_calendar()
 	elif tile_name == "Quiet Mode":
 		quiet_mode_local = not quiet_mode_local
 		control_center_data["quiet_mode"] = quiet_mode_local
@@ -804,6 +842,78 @@ func _handle_reminders_form_tap(position: Vector2) -> void:
 	elif Rect2(232, 390, 170, 34).has_point(position):
 		reminders_mode = "list"
 
+func _handle_calendar_tap(position: Vector2) -> void:
+	if Rect2(520, 22, 92, 34).has_point(position):
+		_go_home()
+		return
+	if calendar_mode == "delete_confirm":
+		if Rect2(78, 354, 210, 42).has_point(position):
+			calendar_mode = "details"
+		elif Rect2(352, 354, 210, 42).has_point(position):
+			api.request_post("/api/calendar/events/delete", {"id": calendar_selected_event_id, "confirm_text": "DELETE_CALENDAR_EVENT"})
+		_request_redraw()
+		return
+	if calendar_mode == "add" or calendar_mode == "edit":
+		_handle_calendar_form_tap(position)
+		return
+	if Rect2(330, 30, 84, 30).has_point(position):
+		_calendar_change_month(-1)
+		return
+	if Rect2(422, 30, 74, 30).has_point(position):
+		_calendar_change_month(1)
+		return
+	if Rect2(44, 426, 92, 34).has_point(position):
+		_calendar_open_add_form()
+		return
+	if Rect2(148, 426, 92, 34).has_point(position):
+		if calendar_selected_event_id <= 0:
+			calendar_status_text = "Select one event first."
+		else:
+			_calendar_open_edit_form()
+		_request_redraw()
+		return
+	if Rect2(252, 426, 92, 34).has_point(position):
+		if calendar_selected_event_id <= 0:
+			calendar_status_text = "Select one event first."
+		else:
+			calendar_mode = "delete_confirm"
+		_request_redraw()
+		return
+	for index in range(42):
+		var cell := _calendar_cell_rect(index)
+		if cell.has_point(position):
+			_calendar_select_cell(index)
+			return
+	var events: Array = _calendar_day_events()
+	for index in range(events.size()):
+		var row := _calendar_event_row_rect(index)
+		if row.has_point(position):
+			var event: Dictionary = events[index] as Dictionary
+			calendar_selected_event_id = int(event.get("id", 0))
+			calendar_selected_event = event
+			_request_redraw()
+			return
+
+func _handle_calendar_form_tap(position: Vector2) -> void:
+	if Rect2(44, 118, 552, 32).has_point(position):
+		_open_text_input("Event title", calendar_form_title, "calendar_title", {})
+	elif Rect2(44, 156, 552, 32).has_point(position):
+		_open_text_input("Description", calendar_form_description, "calendar_description", {})
+	elif Rect2(44, 194, 260, 32).has_point(position):
+		_open_text_input("Date YYYY-MM-DD", calendar_form_date, "calendar_date", {"keyboard_mode": "datetime"})
+	elif Rect2(324, 194, 170, 32).has_point(position):
+		_open_text_input("Time HH:MM", calendar_form_time, "calendar_time", {"keyboard_mode": "datetime"})
+	elif Rect2(44, 240, 160, 32).has_point(position):
+		_calendar_cycle_reminder()
+	elif Rect2(224, 240, 160, 32).has_point(position):
+		_calendar_cycle_snooze()
+	elif Rect2(404, 240, 160, 32).has_point(position):
+		_calendar_cycle_repeat()
+	elif Rect2(44, 390, 170, 34).has_point(position):
+		_calendar_save_form()
+	elif Rect2(232, 390, 170, 34).has_point(position):
+		calendar_mode = "details"
+
 func _reminders_open_add_form() -> void:
 	var now := Time.get_datetime_dict_from_system()
 	reminders_mode = "add"
@@ -813,6 +923,86 @@ func _reminders_open_add_form() -> void:
 	reminders_form_time = "%02d:%02d" % [now.hour, now.minute]
 	reminders_form_private = false
 	api.request_get("/api/privacy/status")
+
+func _calendar_open_add_form() -> void:
+	calendar_mode = "add"
+	calendar_form_title = ""
+	calendar_form_description = ""
+	calendar_form_date = calendar_selected_date
+	calendar_form_time = "09:00"
+	calendar_form_reminder = 0
+	calendar_form_snooze = 10
+	calendar_form_repeat = "none"
+	_request_redraw()
+
+func _calendar_open_edit_form() -> void:
+	calendar_mode = "edit"
+	calendar_form_title = str(calendar_selected_event.get("title", ""))
+	calendar_form_description = str(calendar_selected_event.get("description", ""))
+	calendar_form_date = str(calendar_selected_event.get("occurrence_date", calendar_selected_event.get("start_date", calendar_selected_date)))
+	calendar_form_time = str(calendar_selected_event.get("start_time", "09:00"))
+	calendar_form_reminder = int(calendar_selected_event.get("reminder_minutes_before", 0))
+	calendar_form_snooze = 10
+	calendar_form_repeat = str(calendar_selected_event.get("repeat_type", "none"))
+	_request_redraw()
+
+func _calendar_cycle_reminder() -> void:
+	var options := [-1, 0, 5, 15, 60]
+	var index := options.find(calendar_form_reminder)
+	calendar_form_reminder = int(options[(index + 1) % options.size()])
+	_request_redraw()
+
+func _calendar_cycle_snooze() -> void:
+	var options := [0, 5, 10, 30]
+	var index := options.find(calendar_form_snooze)
+	calendar_form_snooze = int(options[(index + 1) % options.size()])
+	_request_redraw()
+
+func _calendar_cycle_repeat() -> void:
+	var options := ["none", "daily", "weekly", "monthly", "yearly"]
+	var index := options.find(calendar_form_repeat)
+	calendar_form_repeat = str(options[(index + 1) % options.size()])
+	_request_redraw()
+
+func _calendar_save_form() -> void:
+	if calendar_form_title.strip_edges() == "":
+		calendar_status_text = "Event title is required."
+		_request_redraw()
+		return
+	if not _reminders_date_valid(calendar_form_date) or not _reminders_time_valid(calendar_form_time):
+		calendar_status_text = "Use YYYY-MM-DD and HH:MM."
+		_request_redraw()
+		return
+	var payload := {
+		"title": calendar_form_title,
+		"description": calendar_form_description,
+		"start_date": calendar_form_date,
+		"start_time": calendar_form_time,
+		"reminder_minutes_before": calendar_form_reminder,
+		"snooze_minutes": calendar_form_snooze,
+		"repeat_type": calendar_form_repeat
+	}
+	if calendar_mode == "edit":
+		payload["id"] = calendar_selected_event_id
+		api.request_post("/api/calendar/events/update", payload)
+	else:
+		api.request_post("/api/calendar/events/create", payload)
+	calendar_mode = "details"
+
+func _calendar_reminder_label() -> String:
+	if calendar_form_reminder < 0:
+		return "Off"
+	if calendar_form_reminder == 0:
+		return "At time"
+	if calendar_form_reminder == 60:
+		return "1 hour before"
+	return str(calendar_form_reminder) + " min before"
+
+func _calendar_snooze_label() -> String:
+	return "Off" if calendar_form_snooze <= 0 else str(calendar_form_snooze) + " min"
+
+func _calendar_repeat_label() -> String:
+	return calendar_form_repeat.capitalize()
 
 func _reminders_open_edit_form() -> void:
 	reminders_mode = "edit"
@@ -1387,7 +1577,7 @@ func _close_text_input() -> void:
 
 func _text_input_keys() -> String:
 	if text_input_keyboard_mode == "datetime":
-		if text_input_target == "reminder_time":
+		if text_input_target == "reminder_time" or text_input_target == "calendar_time":
 			return "0123456789:"
 		return "0123456789-"
 	if text_input_keyboard_mode == "number":
@@ -1486,6 +1676,14 @@ func _commit_text_input() -> void:
 		reminders_form_date = value
 	elif target == "reminder_time":
 		reminders_form_time = value
+	elif target == "calendar_title":
+		calendar_form_title = value
+	elif target == "calendar_description":
+		calendar_form_description = value
+	elif target == "calendar_date":
+		calendar_form_date = value
+	elif target == "calendar_time":
+		calendar_form_time = value
 	_request_redraw()
 
 func _settings_update(section: String, key: String, value) -> void:
@@ -2066,6 +2264,40 @@ func _open_reminders() -> void:
 	api.request_get("/api/reminders/due")
 	_request_redraw()
 
+func _open_calendar() -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "Calendar"
+	transition_active = false
+	if calendar_year <= 0 or calendar_month <= 0:
+		var now := Time.get_datetime_dict_from_system()
+		calendar_year = int(now.year)
+		calendar_month = int(now.month)
+		calendar_selected_date = "%04d-%02d-%02d" % [now.year, now.month, now.day]
+	calendar_mode = "details"
+	_request_calendar_month()
+	_request_calendar_day()
+	api.request_get("/api/calendar/due")
+	_request_redraw()
+
+func _request_calendar_month() -> void:
+	api.request_get("/api/calendar/month?year=" + str(calendar_year) + "&month=" + str(calendar_month) + "&selected_date=" + calendar_selected_date)
+
+func _request_calendar_day() -> void:
+	api.request_get("/api/calendar/day?date=" + calendar_selected_date)
+
+func _calendar_change_month(delta: int) -> void:
+	calendar_month += delta
+	if calendar_month < 1:
+		calendar_month = 12
+		calendar_year -= 1
+	elif calendar_month > 12:
+		calendar_month = 1
+		calendar_year += 1
+	calendar_selected_event_id = 0
+	calendar_selected_event = {}
+	_request_calendar_month()
+	_request_redraw()
+
 func _open_diagnostics() -> void:
 	nav.previous_screen = nav.current_screen
 	nav.current_screen = "Diagnostics"
@@ -2111,6 +2343,8 @@ func _go_home() -> void:
 		study_current_page = "home"
 	elif nav.current_screen == "Reminders":
 		reminders_mode = "list"
+	elif nav.current_screen == "Calendar":
+		calendar_mode = "details"
 	if direction == "diagnostics":
 		nav.previous_screen = nav.current_screen
 		nav.current_screen = "Face Home"
@@ -2142,12 +2376,18 @@ func _update_api_polling(delta: float) -> void:
 	api_poll_accumulator += delta
 	study_timer_poll_accumulator += delta
 	reminders_poll_accumulator += delta
+	calendar_poll_accumulator += delta
 	if transition_active:
 		return
 	var reminders_interval := 1.0 if reminders_due_modal_open else 5.0
 	if reminders_poll_accumulator >= reminders_interval:
 		reminders_poll_accumulator = 0.0
 		api.request_get("/api/reminders/due")
+		return
+	var calendar_interval := 5.0 if calendar_due_modal_open else 30.0
+	if calendar_poll_accumulator >= calendar_interval:
+		calendar_poll_accumulator = 0.0
+		api.request_get("/api/calendar/due")
 		return
 	if (nav.current_screen == "Face Home" or nav.current_screen == "Study") and study_timer_poll_accumulator >= 1.0:
 		study_timer_poll_accumulator = 0.0
@@ -2236,6 +2476,8 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 			sound_percent = int(payload.get("sound_percent", sound_percent))
 		quiet_mode_local = bool(payload.get("quiet_mode", quiet_mode_local))
 		remote_network_local = str(payload.get("remote_network_state", remote_network_local))
+	elif endpoint.begins_with("/api/calendar/"):
+		_handle_calendar_api(endpoint, payload)
 	elif endpoint.begins_with("/api/reminders/"):
 		_handle_reminders_api(endpoint, payload)
 	elif endpoint == "/api/overview":
@@ -2423,6 +2665,49 @@ func _handle_reminders_api(endpoint: String, payload: Dictionary) -> void:
 		api.request_get("/api/reminders/due")
 	_request_redraw()
 
+func _handle_calendar_api(endpoint: String, payload: Dictionary) -> void:
+	calendar_status_text = str(payload.get("message", payload.get("status", "ok")))
+	if endpoint.begins_with("/api/calendar/month"):
+		calendar_data = payload
+	elif endpoint.begins_with("/api/calendar/day"):
+		calendar_day_data = payload
+		_calendar_restore_selected_from_day()
+	elif endpoint == "/api/calendar/due":
+		calendar_due_data = payload
+		var due_raw = payload.get("due", [])
+		calendar_due_modal_open = due_raw is Array and not due_raw.is_empty()
+		_rebuild_notifications_from_reminders()
+		if calendar_due_modal_open:
+			var first := _first_calendar_due_item()
+			calendar_pending_due_event_id = int(first.get("id", 0))
+			calendar_pending_due_occurrence = str(first.get("occurrence_start", ""))
+	elif endpoint in ["/api/calendar/events/create", "/api/calendar/events/update", "/api/calendar/events/delete", "/api/calendar/dismiss", "/api/calendar/snooze"]:
+		if endpoint == "/api/calendar/dismiss" or endpoint == "/api/calendar/snooze":
+			calendar_due_modal_open = false
+			_rebuild_notifications_from_reminders()
+		calendar_mode = "details"
+		_request_calendar_month()
+		_request_calendar_day()
+		api.request_get("/api/calendar/due")
+	_request_redraw()
+
+func _first_calendar_due_item() -> Dictionary:
+	var due_raw = calendar_due_data.get("due", [])
+	if due_raw is Array and not due_raw.is_empty():
+		return due_raw[0] as Dictionary
+	return {}
+
+func _calendar_restore_selected_from_day() -> void:
+	if calendar_selected_event_id <= 0:
+		return
+	for raw_event in _calendar_day_events():
+		var event: Dictionary = raw_event as Dictionary
+		if int(event.get("id", 0)) == calendar_selected_event_id:
+			calendar_selected_event = event
+			return
+	calendar_selected_event_id = 0
+	calendar_selected_event = {}
+
 func _first_due_notification_item() -> Dictionary:
 	for raw_notification in notifications_data:
 		var notification: Dictionary = raw_notification as Dictionary
@@ -2465,6 +2750,31 @@ func _rebuild_notifications_from_reminders() -> void:
 				"created_at": str(item.get("triggered_at", item.get("due_at", ""))),
 				"dismissed_local": false
 			})
+	var calendar_due_raw = calendar_due_data.get("due", [])
+	if calendar_due_raw is Array:
+		for raw_calendar_item in calendar_due_raw:
+			var calendar_item: Dictionary = raw_calendar_item as Dictionary
+			var event_id := int(calendar_item.get("id", 0))
+			if event_id <= 0:
+				continue
+			var occurrence := str(calendar_item.get("occurrence_start", ""))
+			var notification_id := "calendar:" + str(event_id) + ":" + occurrence
+			if bool(notification_dismissed_ids.get(notification_id, false)):
+				continue
+			next_notifications.append({
+				"id": notification_id,
+				"type": "calendar",
+				"title": "Calendar",
+				"body": str(calendar_item.get("title", "Calendar event")),
+				"subtitle": "Starts at " + str(calendar_item.get("start_time", "")),
+				"requires_pin": false,
+				"source_id": event_id,
+				"source_date": str(calendar_item.get("occurrence_date", calendar_item.get("start_date", ""))),
+				"occurrence_start": occurrence,
+				"source_item": calendar_item,
+				"created_at": occurrence,
+				"dismissed_local": false
+			})
 	notifications_data = next_notifications
 	notification_scroll_y = clampf(notification_scroll_y, 0.0, _notification_max_scroll())
 	if notification_detail_modal_open and not notification_selected.is_empty():
@@ -2500,6 +2810,10 @@ func _local_remove_notification(notification_id: String, remember_dismissed: boo
 	if notification_id == "reminder:" + str(reminders_pending_due_id):
 		reminders_due_modal_open = false
 		reminders_pending_due_id = 0
+	if notification_id == "calendar:" + str(calendar_pending_due_event_id) + ":" + calendar_pending_due_occurrence:
+		calendar_due_modal_open = false
+		calendar_pending_due_event_id = 0
+		calendar_pending_due_occurrence = ""
 	_request_redraw()
 
 func _dismiss_notification(notification: Dictionary) -> void:
@@ -2509,6 +2823,8 @@ func _dismiss_notification(notification: Dictionary) -> void:
 	_local_remove_notification(notification_id)
 	if str(notification.get("type", "")) == "reminder":
 		api.request_post("/api/reminders/dismiss", {"id": int(notification.get("source_id", 0))})
+	elif str(notification.get("type", "")) == "calendar":
+		api.request_post("/api/calendar/dismiss", {"event_id": int(notification.get("source_id", 0)), "occurrence_start": str(notification.get("occurrence_start", ""))})
 
 func _dismiss_pending_due_notification() -> void:
 	var notification_id := "reminder:" + str(reminders_pending_due_id)
@@ -2519,7 +2835,33 @@ func _dismiss_pending_due_notification() -> void:
 	else:
 		_dismiss_notification(notification)
 
-func _handle_due_reminder_modal_tap(position: Vector2) -> bool:
+func _dismiss_pending_calendar_notification() -> void:
+	var notification_id := "calendar:" + str(calendar_pending_due_event_id) + ":" + calendar_pending_due_occurrence
+	var notification := _notification_by_id(notification_id)
+	if notification.is_empty():
+		_local_remove_notification(notification_id)
+		api.request_post("/api/calendar/dismiss", {"event_id": calendar_pending_due_event_id, "occurrence_start": calendar_pending_due_occurrence})
+	else:
+		_dismiss_notification(notification)
+
+func _handle_due_notification_modal_tap(position: Vector2) -> bool:
+	if calendar_due_modal_open and not _first_calendar_due_item().is_empty():
+		if Rect2(164, 324, 96, 34).has_point(position):
+			_dismiss_pending_calendar_notification()
+			return true
+		if Rect2(272, 324, 112, 34).has_point(position):
+			api.request_post("/api/calendar/snooze", {"event_id": calendar_pending_due_event_id, "minutes": 10})
+			_local_remove_notification("calendar:" + str(calendar_pending_due_event_id) + ":" + calendar_pending_due_occurrence, false)
+			calendar_due_modal_open = false
+			return true
+		if Rect2(396, 324, 96, 34).has_point(position):
+			calendar_due_modal_open = false
+			calendar_selected_event_id = calendar_pending_due_event_id
+			var first := _first_calendar_due_item()
+			calendar_selected_date = str(first.get("occurrence_date", calendar_selected_date))
+			_open_calendar()
+			return true
+		return false
 	if not reminders_due_modal_open:
 		return false
 	if Rect2(164, 324, 96, 34).has_point(position):
@@ -2536,6 +2878,9 @@ func _handle_due_reminder_modal_tap(position: Vector2) -> bool:
 		_open_reminders()
 		return true
 	return false
+
+func _handle_due_reminder_modal_tap(position: Vector2) -> bool:
+	return _handle_due_notification_modal_tap(position)
 
 func _reminders_restore_selected_from_data() -> void:
 	if reminders_selected_id <= 0:
@@ -2579,7 +2924,7 @@ func _draw() -> void:
 	_draw_global_overlays()
 
 func _draw_global_overlays() -> void:
-	if reminders_due_modal_open:
+	if reminders_due_modal_open or calendar_due_modal_open:
 		_draw_due_reminder_modal()
 
 func _draw_transition() -> void:
@@ -2639,6 +2984,8 @@ func _draw_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_study()
 		"Reminders":
 			_draw_reminders()
+		"Calendar":
+			_draw_calendar()
 		_:
 			_draw_placeholder(nav.placeholder_title if nav.placeholder_title != "" else screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -2656,6 +3003,8 @@ func _draw_overlay_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_quick_shelf()
 		"Reminders":
 			_draw_reminders()
+		"Calendar":
+			_draw_calendar()
 		_:
 			_draw_placeholder(screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -2774,12 +3123,13 @@ func _draw_due_reminder_modal() -> void:
 	var rect := Rect2(128, 188, 384, 190)
 	_draw_rounded_rect(rect, Color(0.045, 0.052, 0.064, 0.98), 22.0)
 	_draw_rounded_outline(rect, Color(1.0, 1.0, 1.0, 0.10), 22.0)
-	_draw_centered_text("Reminder", 320.0, 224.0, 18, ThemeScript.TEXT)
+	var modal_title := "Calendar" if str(notification.get("type", "")) == "calendar" else "Reminder"
+	_draw_centered_text(modal_title, 320.0, 224.0, 18, ThemeScript.TEXT)
 	var title := str(notification.get("body", "Reminder"))
 	_draw_centered_text(_short_text(title, 38), 320.0, 258.0, 15, ThemeScript.TEXT)
 	_draw_centered_text(_short_text(str(notification.get("subtitle", "")), 38), 320.0, 282.0, 11, ThemeScript.TEXT_MUTED)
-	_draw_button(Rect2(164, 324, 96, 34), "Dismiss", false)
-	_draw_button(Rect2(272, 324, 112, 34), "Snooze +5m", false)
+	_draw_button(Rect2(164, 324, 96, 34), "Done" if modal_title == "Calendar" else "Dismiss", false)
+	_draw_button(Rect2(272, 324, 112, 34), "Snooze 10m" if modal_title == "Calendar" else "Snooze +5m", false)
 	_draw_button(Rect2(396, 324, 96, 34), "Open", false)
 
 func _draw_study_timer_overlay() -> void:
@@ -3570,6 +3920,154 @@ func _draw_study() -> void:
 		_draw_text(_short_text(study_status_text, 70), Vector2(34, 460), 10, ThemeScript.TEXT_DIM)
 	if text_input_open:
 		_draw_text_input_overlay()
+
+func _draw_calendar() -> void:
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	var month_label := str(calendar_data.get("month_name", _calendar_month_name(calendar_month))) + " " + str(calendar_year)
+	_draw_text(month_label, Vector2(26, 44), 25, ThemeScript.TEXT)
+	_draw_button(Rect2(330, 30, 84, 30), "Previous", false)
+	_draw_button(Rect2(422, 30, 74, 30), "Next", false)
+	_draw_pill(Rect2(520, 22, 92, 34), Color(0.10, 0.11, 0.13, 0.94), false)
+	_draw_centered_text("Home", 566.0, 43.0, 12, ThemeScript.TEXT_MUTED)
+	_draw_calendar_weekdays()
+	_draw_calendar_grid()
+	if calendar_mode == "add" or calendar_mode == "edit":
+		_draw_calendar_form()
+	elif calendar_mode == "delete_confirm":
+		_draw_calendar_day_details()
+		_draw_rounded_rect(Rect2(62, 286, 516, 128), Color(0.08, 0.04, 0.045, 0.98), 18.0)
+		_draw_rounded_outline(Rect2(62, 286, 516, 128), Color(1.0, 0.22, 0.22, 0.45), 18.0)
+		_draw_text("Delete selected event?", Vector2(84, 320), 17, ThemeScript.TEXT)
+		_draw_text("This cannot be undone.", Vector2(84, 344), 11, ThemeScript.TEXT_MUTED)
+		_draw_button(Rect2(78, 354, 210, 42), "Cancel", false)
+		_draw_button(Rect2(352, 354, 210, 42), "Confirm delete", true)
+	else:
+		_draw_calendar_day_details()
+	if calendar_status_text != "":
+		_draw_text(_short_text(calendar_status_text, 74), Vector2(34, 472), 10, ThemeScript.TEXT_DIM)
+	if text_input_open:
+		_draw_text_input_overlay()
+
+func _draw_calendar_weekdays() -> void:
+	var labels := ["M", "T", "W", "T", "F", "S", "S"]
+	for index in range(7):
+		var rect := _calendar_weekday_rect(index)
+		var color := Color(1.0, 0.48, 0.48, 0.78) if index == 6 else ThemeScript.TEXT_MUTED
+		_draw_centered_text(str(labels[index]), rect.position.x + rect.size.x * 0.5, rect.position.y + 16.0, 11, color)
+
+func _draw_calendar_grid() -> void:
+	var cells := _calendar_cells()
+	for index in range(42):
+		var rect := _calendar_cell_rect(index)
+		var cell: Dictionary = cells[index] as Dictionary if index < cells.size() else {}
+		var selected := bool(cell.get("is_selected", false)) or str(cell.get("full_date", "")) == calendar_selected_date
+		var fill := Color(0.120, 0.132, 0.158, 1.0) if selected else Color(0.064, 0.072, 0.088, 0.96)
+		if not bool(cell.get("is_current_month", true)):
+			fill = Color(0.045, 0.050, 0.062, 0.88)
+		_draw_rounded_rect(rect, fill, 8.0)
+		_draw_rounded_outline(rect, Color(1.0, 1.0, 1.0, 0.055), 8.0)
+		var day_number := int(cell.get("day_number", 0))
+		var day_text := str(day_number) if day_number > 0 else ""
+		var day_color := Color(1.0, 0.45, 0.45, 0.82) if bool(cell.get("is_sunday", false)) else ThemeScript.TEXT
+		if not bool(cell.get("is_current_month", true)):
+			day_color = ThemeScript.TEXT_DIM
+		if bool(cell.get("is_today", false)):
+			_draw_rounded_rect(Rect2(rect.position.x + 25.0, rect.position.y + 4.0, 26.0, 20.0), Color(0.18, 0.58, 1.0, 0.24), 10.0)
+		_draw_centered_text(day_text, rect.position.x + rect.size.x * 0.5, rect.position.y + 18.0, 11, day_color)
+		_draw_calendar_event_indicator(rect, int(cell.get("events_count", 0)), bool(cell.get("has_reminder", false)))
+
+func _draw_calendar_event_indicator(rect: Rect2, count: int, has_reminder: bool) -> void:
+	if count <= 0:
+		return
+	var y := rect.position.y + 30.0
+	if count <= 3:
+		var start_x := rect.position.x + rect.size.x * 0.5 - float(count - 1) * 5.0
+		for index in range(count):
+			draw_circle(Vector2(start_x + float(index) * 10.0, y), 2.2, ThemeScript.BLUE)
+	else:
+		_draw_centered_text("3+", rect.position.x + rect.size.x * 0.5, y + 4.0, 9, ThemeScript.BLUE)
+	if has_reminder:
+		draw_circle(Vector2(rect.position.x + rect.size.x - 10.0, rect.position.y + 10.0), 2.0, ThemeScript.WARNING)
+
+func _draw_calendar_day_details() -> void:
+	var panel := Rect2(24, 370, 592, 90)
+	_draw_rounded_rect(panel, Color(0.052, 0.060, 0.074, 0.98), 14.0)
+	_draw_rounded_outline(panel, Color(1.0, 1.0, 1.0, 0.065), 14.0)
+	_draw_text(_short_text(str(calendar_day_data.get("display_date", calendar_selected_date)), 42), Vector2(44, 390), 14, ThemeScript.TEXT)
+	_draw_button(Rect2(44, 426, 92, 34), "Add", false)
+	_draw_button(Rect2(148, 426, 92, 34), "Edit", calendar_selected_event_id > 0)
+	_draw_button(Rect2(252, 426, 92, 34), "Delete", calendar_selected_event_id > 0)
+	var events := _calendar_day_events()
+	if events.is_empty():
+		_draw_text("No events", Vector2(366, 432), 11, ThemeScript.TEXT_MUTED)
+		return
+	for index in range(mini(events.size(), 2)):
+		var event: Dictionary = events[index] as Dictionary
+		var row := _calendar_event_row_rect(index)
+		var active := int(event.get("id", 0)) == calendar_selected_event_id
+		_draw_rounded_rect(row, Color(0.12, 0.132, 0.158, 1.0) if active else Color(0.075, 0.085, 0.102, 1.0), 10.0)
+		_draw_text(_short_text(str(event.get("start_time", "")) + " " + str(event.get("title", "")), 28), row.position + Vector2(8, 18), 10, ThemeScript.TEXT)
+
+func _draw_calendar_form() -> void:
+	_draw_rounded_rect(Rect2(24, 92, 592, 368), Color(0.040, 0.047, 0.060, 0.985), 18.0)
+	_draw_rounded_outline(Rect2(24, 92, 592, 368), Color(1.0, 1.0, 1.0, 0.08), 18.0)
+	_draw_text("Add Event" if calendar_mode == "add" else "Edit Event", Vector2(44, 110), 18, ThemeScript.TEXT)
+	_draw_study_row(Rect2(44, 118, 552, 32), "Title", calendar_form_title if calendar_form_title != "" else "Tap to type")
+	_draw_study_row(Rect2(44, 156, 552, 32), "Description", calendar_form_description if calendar_form_description != "" else "Optional")
+	_draw_reminder_form_field(Rect2(44, 194, 260, 32), "Date", calendar_form_date)
+	_draw_reminder_form_field(Rect2(324, 194, 170, 32), "Time", calendar_form_time)
+	_draw_button(Rect2(44, 240, 160, 32), _calendar_reminder_label(), false)
+	_draw_button(Rect2(224, 240, 160, 32), _calendar_snooze_label(), false)
+	_draw_button(Rect2(404, 240, 160, 32), _calendar_repeat_label(), false)
+	_draw_text("Reminder: Off / At time / 5 min before / 15 min before / 1 hour before", Vector2(48, 294), 9, ThemeScript.TEXT_DIM)
+	_draw_text("Snooze: Off / 5 min / 10 min / 30 min", Vector2(48, 314), 9, ThemeScript.TEXT_DIM)
+	_draw_text("Repeat: None / Daily / Weekly / Monthly / Yearly", Vector2(48, 334), 9, ThemeScript.TEXT_DIM)
+	_draw_button(Rect2(44, 390, 170, 34), "Save", false)
+	_draw_button(Rect2(232, 390, 170, 34), "Cancel", false)
+
+func _calendar_weekday_rect(index: int) -> Rect2:
+	return Rect2(34.0 + float(index) * 82.0, 78.0, 76.0, 20.0)
+
+func _calendar_cell_rect(index: int) -> Rect2:
+	return Rect2(34.0 + float(index % 7) * 82.0, 102.0 + float(int(index / 7)) * 43.0, 76.0, 38.0)
+
+func _calendar_event_row_rect(index: int) -> Rect2:
+	return Rect2(360, 400 + float(index) * 28.0 - calendar_event_scroll_y, 224, 24)
+
+func _calendar_cells() -> Array:
+	var weeks_raw = calendar_data.get("weeks", [])
+	var cells: Array = []
+	if weeks_raw is Array:
+		for raw_week in weeks_raw:
+			var week: Dictionary = raw_week as Dictionary
+			var raw_cells = week.get("cells", [])
+			if raw_cells is Array:
+				for raw_cell in raw_cells:
+					cells.append(raw_cell)
+	return cells
+
+func _calendar_day_events() -> Array:
+	var raw_events = calendar_day_data.get("events", [])
+	return raw_events if raw_events is Array else []
+
+func _calendar_select_cell(index: int) -> void:
+	var cells := _calendar_cells()
+	if index >= cells.size():
+		return
+	var cell: Dictionary = cells[index] as Dictionary
+	calendar_selected_date = str(cell.get("full_date", calendar_selected_date))
+	calendar_selected_event_id = 0
+	calendar_selected_event = {}
+	calendar_mode = "details"
+	_request_calendar_month()
+	_request_calendar_day()
+	_request_redraw()
+
+func _calendar_month_name(month_number: int) -> String:
+	var names := ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+	if month_number >= 1 and month_number <= 12:
+		return str(names[month_number])
+	return "Calendar"
 
 func _draw_reminders() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)

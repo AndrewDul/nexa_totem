@@ -89,6 +89,7 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Quick Shelf tiles are clickable.
 - Quick Shelf Settings, Diagnostics, Clock, Network, Camera, Logs, and Reports actions are wired.
 - Quick Shelf Reminders opens the local Reminders app.
+- Quick Shelf Calendar opens the local Calendar app.
 - Network, Camera, Logs, and Reports open Diagnostics with the selected tab active.
 - Other Quick Shelf tiles show visible planned status instead of silently doing nothing.
 - Quick Shelf scroll drag is limited to the scrollbar strip so it does not block normal tile taps.
@@ -118,6 +119,10 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Private reminders use the existing PIN privacy state and show a locked placeholder until privacy is unlocked.
 - Reminder due polling runs on a safe interval, date/time fields use centered fixed-width drawing, and date/time input uses a numeric datetime keyboard.
 - Enabling a private reminder without a PIN opens Privacy PIN setup and preserves the reminder form state.
+- Calendar opens from Menu and Quick Shelf as a local monthly calendar with a 42-cell Monday-start grid.
+- Calendar draws English month/year headers, Previous/Next navigation, weekday labels, Sunday styling, today and selected-day highlights, and compact event indicators.
+- Calendar day details support selected-event Add/Edit/Delete flows, event time, reminder, snooze, and repeat options.
+- Calendar due notifications are local, global, and integrated into generic Control Center Notifications without deleting events.
 - Display, Sound, Network, Remote, Diagnostics, Safety, About, and Exit NeXa pages are represented.
 - About shows NeXa ToTem project, author Andrzej Dul, DevDul, hardware, software, features, settings, and safety notes.
 - Safety and Exit NeXa actions are planned/safe only; the UI does not power off or reboot the Raspberry Pi.
