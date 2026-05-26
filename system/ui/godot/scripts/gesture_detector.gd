@@ -32,4 +32,6 @@ func finish(position: Vector2, now: float) -> String:
 		return "swipe_left" if delta.x < 0.0 else "swipe_right"
 	if delta.y >= MIN_SWIPE_DISTANCE:
 		return "swipe_down"
+	if delta.y <= -MIN_SWIPE_DISTANCE:
+		return "swipe_up"
 	return ""

@@ -135,3 +135,59 @@ Diagnostics opens as a tabbed screen because there will be many data categories.
 Python remains the backend and Godot is the local visual UI layer.
 
 The UI must not run hardware checks directly; it should read saved reports or backend data later.
+
+## 2026-05-25 — Godot UI Premium Visual Polish
+
+I improved the visual direction of the Godot LCD UI prototype.
+
+I refined typography, spacing, rounded cards, and tile style.
+
+I kept the UI fixed at 640x480 windowed mode for development.
+
+I kept Face Home clean and removed debug labels.
+
+I kept vertical blue bean eyes and a blue rounded mouth as the main face direction.
+
+I added or prepared smoother slide transitions.
+
+I kept navigation centered on Face Home so panels do not stack.
+
+## 2026-05-25 — Godot UI Runtime and Performance Polish
+
+I fixed runtime drawing helper problems in the Godot prototype.
+
+I reduced visual effects that caused lag.
+
+I kept the face clean with vertical blue eyes and reduced glow.
+
+I changed Menu and Control Center to use visible rounded cards and tiles.
+
+I kept transitions lightweight.
+
+I kept the UI fixed at 640x480 windowed mode.
+
+I kept Face Home as the center so panels do not stack.
+
+## 2026-05-25 — Godot UI Runtime Stability and Tile Layout Polish
+
+I fixed a Godot runtime issue caused by Rect2.translated usage.
+
+I tightened the UI layout so menu tiles use short labels and avoid overflow.
+
+I changed the transition approach to be lighter and faster.
+
+I kept the UI fixed at 640x480 windowed mode.
+
+I kept the screen style dark, simple, and card-based.
+
+## 2026-05-25 — Godot UI Scroll and Idle Blink Polish
+
+I added lightweight scroll support for content that does not fit on the 640x480 screen.
+
+I added subtle idle eye blinking to Face Home.
+
+I reduced UI font sizes slightly to avoid text overflow.
+
+I kept transitions fast and lightweight.
+
+I kept the UI fixed at 640x480 windowed mode.
