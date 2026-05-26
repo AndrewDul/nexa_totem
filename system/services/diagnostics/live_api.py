@@ -25,6 +25,7 @@ from system.services.diagnostics.live_collectors import (
     system_data,
 )
 from system.services.diagnostics.live_state import LiveState, ensure_runtime_dirs
+from system.services.settings import settings_store
 
 
 HOST = "127.0.0.1"
@@ -114,6 +115,10 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
                 self._json(cached(STATE, "reports", TTL_SECONDS["reports"], reports_data))
             elif path == "/api/control-center":
                 self._json(cached(STATE, "control-center", TTL_SECONDS["control-center"], lambda: control_center_data(STATE)))
+            elif path == "/api/settings":
+                self._json({"status": "ok", "settings": settings_store.get_settings()})
+            elif path == "/api/privacy/status":
+                self._json(settings_store.privacy_status())
             elif path == "/api/benchmarks/status":
                 self._json(STATE.get_job("benchmarks"))
             elif path == "/api/reports/status":
@@ -171,6 +176,22 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
                 requested = data.get("state")
                 STATE.remote_network_state = requested if requested in {"on", "off", "planned"} else "planned"
             self._json({"status": "planned", "dry_run": True, "remote_network_state": STATE.remote_network_state})
+        elif path == "/api/settings/update":
+            payload = settings_store.update_setting(str(data.get("section", "")), str(data.get("key", "")), data.get("value"))
+            self._json(payload, 200 if payload.get("status") == "ok" else 400)
+        elif path == "/api/settings/update-many":
+            payload = settings_store.update_many(data.get("updates", []))
+            self._json(payload, 200 if payload.get("status") == "ok" else 400)
+        elif path == "/api/settings/reset-section":
+            payload = settings_store.reset_section(str(data.get("section", "")))
+            self._json(payload, 200 if payload.get("status") == "ok" else 400)
+        elif path == "/api/privacy/pin/set":
+            payload = settings_store.set_pin(str(data.get("pin", "")))
+            self._json(payload, 200 if payload.get("status") == "ok" else 400)
+        elif path == "/api/privacy/pin/verify":
+            self._json(settings_store.verify_pin(str(data.get("pin", ""))))
+        elif path == "/api/privacy/lock":
+            self._json(settings_store.lock_private())
         elif path == "/api/camera/check/run":
             self._json(start_camera_check(STATE))
         elif path == "/api/audio/check/run":

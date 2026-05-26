@@ -272,6 +272,48 @@ I kept Control Center lightweight by loading network lists only on Wi-Fi details
 
 I improved camera preview toward smoother persistent MJPEG frame updates.
 
+## 2026-05-25 — Settings MVP and Private PIN Foundation
+
+I added the first Settings MVP for NeXa ToTem.
+
+I added Appearance, Notifications, Modes, Quick Shelf, Display, Sound, Network, Remote, Privacy, Diagnostics, and Safety sections.
+
+I added private notifications and private reminders settings.
+
+I added a 4-digit PIN foundation and store only hash/salt, not the raw PIN.
+
+I added a local settings store under var/data.
+
+I kept settings actions safe/prototype where hardware actions are not ready.
+
+I kept the Godot UI fixed at 640x480 windowed mode and OpenGL/Compatibility.
+
+## 2026-05-25 — Settings End-to-End Interaction Fix
+
+I fixed Settings navigation so tiles open their detail pages.
+
+I connected Settings rows to real settings updates.
+
+I wired Appearance, Notifications, Modes, Quick Shelf, Display, Sound, Network, Remote, Privacy, Diagnostics, and Safety pages.
+
+I kept PIN-based private notifications/reminders safe with hash/salt storage.
+
+I kept Safety/Exit actions planned/safe only.
+
+I added tests to catch Settings routing and update regressions.
+
+## 2026-05-25 — Appearance Dropdowns, Quick Shelf Panel, and About Page
+
+I changed Appearance choices to use dropdown-style option lists.
+
+I made background color, tile accent color, and presets apply visibly instead of only saving.
+
+I added the bottom swipe-up Quick Shelf panel that uses the selected Settings tiles.
+
+I added an About page with project, author, DevDul, hardware, software, features, settings, and safety information.
+
+I kept real hardware/network/power actions safe or planned where they are not ready.
+
 ## 2026-05-25 — Godot LCD UI and Live Diagnostics MVP Checkpoint
 
 I finished the first useful Godot LCD UI foundation for NeXa ToTem.
@@ -304,3 +346,14 @@ I fixed the Benchmark tab crash caused by missing/null result data. Benchmark da
 
 I kept tests and validators in place for the Godot UI, diagnostics API, camera preview lifecycle, network data, OpenGL renderer stability, and no-fullscreen development mode.
 
+## 2026-05-25 — Quick Shelf Tile Interaction Fix
+
+I fixed Quick Shelf tile tap routing.
+
+I changed Quick Shelf scroll drag so it does not consume normal tile taps.
+
+I made Quick Shelf tiles open Settings, Diagnostics, Clock, and selected Diagnostics tabs.
+
+I kept unfinished Quick Shelf tiles as visible planned actions.
+
+I kept Exit NeXa planned/safe only.

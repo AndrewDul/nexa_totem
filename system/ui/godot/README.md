@@ -64,3 +64,30 @@ The current prototype now reads live diagnostics through the local Python API at
 - Benchmarks run on demand and show result rows after completion.
 - Wi-Fi connect actions are planned/dry-run in this sprint; the UI does not change real network connections.
 - Wi-Fi and remote network write actions are dry-run/planned in this sprint.
+
+## Settings MVP
+
+The Godot UI now includes an Apple-like Settings Home with large rounded tiles and detail pages.
+
+- Settings tiles are clickable and open their detail pages.
+- Settings rows update local state immediately and save through the local API.
+- Appearance covers presets, eye color, mouth color, tile accent, background, and LED color.
+- Appearance can update the Face Home eye/mouth preview colors and active tile accent.
+- Appearance uses lightweight dropdown-style option lists for colors and presets.
+- Theme presets update eye, mouth, tile accent, background, and LED color together.
+- Background and active tile accent changes are visible in the live UI.
+- Notifications covers style, Face Home display, sound, LED, face expression, behaviour, private notifications, and private reminders.
+- Privacy provides a usable 4-digit PIN setup/unlock/lock flow for private notifications and reminders.
+- Modes includes Normal, Quiet, Focus, Night, Away, Demo, and Maintenance.
+- Quick Shelf lets the user choose which tiles should appear in the future bottom swipe-up shelf and saves the selection.
+- Face Home swipe-up opens the actual Quick Shelf bottom panel using the selected tiles.
+- Quick Shelf slides up from the bottom and closes with swipe-down, Escape, or Home.
+- Quick Shelf tiles are clickable.
+- Quick Shelf Settings, Diagnostics, Clock, Network, Camera, Logs, and Reports actions are wired.
+- Network, Camera, Logs, and Reports open Diagnostics with the selected tab active.
+- Other Quick Shelf tiles show visible planned status instead of silently doing nothing.
+- Quick Shelf scroll drag is limited to the scrollbar strip so it does not block normal tile taps.
+- Display, Sound, Network, Remote, Diagnostics, Safety, About, and Exit NeXa pages are represented.
+- About shows NeXa ToTem project, author Andrzej Dul, DevDul, hardware, software, features, settings, and safety notes.
+- Safety and Exit NeXa actions are planned/safe only; the UI does not power off or reboot the Raspberry Pi.
+- Settings stay within the fixed 640x480 window and use the existing scroll support when content is larger than the panel.

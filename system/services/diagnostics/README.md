@@ -31,6 +31,7 @@ Reports are only saved when a script asks for them, such as with `--save-report`
 - Control Center has a lightweight `/api/control-center` endpoint that avoids full network scans.
 - `/api/network` returns connected, saved, and available Wi-Fi networks when they can be read safely.
 - `/api/control-center` avoids full saved/available Wi-Fi lists so swipe-down stays fast.
+- The same localhost API exposes `/api/settings` and privacy PIN endpoints for the Settings MVP.
 - Diagnostics tabs request their own data, such as system, processes, audio, camera, network, logs, and reports.
 - Benchmarks and report generation run only after button requests.
 - Camera preview is off by default and starts only when the UI toggle requests it.

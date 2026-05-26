@@ -36,6 +36,25 @@ const DIAGNOSTIC_TABS := [
 	"Logs",
 	"Network"
 ]
+const SETTINGS_TILES := [
+	{"icon": "◐", "title": "Appearance", "subtitle": "Theme"},
+	{"icon": "!", "title": "Notifications", "subtitle": "Alerts"},
+	{"icon": "◆", "title": "Modes", "subtitle": "Behaviour"},
+	{"icon": "▤", "title": "Quick Shelf", "subtitle": "Bottom"},
+	{"icon": "☼", "title": "Display", "subtitle": "Screen"},
+	{"icon": "♪", "title": "Sound", "subtitle": "Audio"},
+	{"icon": "⌁", "title": "Network", "subtitle": "Wi-Fi"},
+	{"icon": "◇", "title": "Remote", "subtitle": "Control"},
+	{"icon": "●", "title": "Privacy", "subtitle": "PIN"},
+	{"icon": "▦", "title": "Diagnostics", "subtitle": "Logs"},
+	{"icon": "□", "title": "Safety", "subtitle": "Exit"},
+	{"icon": "i", "title": "About", "subtitle": "NeXa"},
+	{"icon": "×", "title": "Exit NeXa", "subtitle": "Planned"}
+]
+const COLOR_OPTIONS := ["Blue", "Sky Blue", "Cyan", "White", "Warm White", "Yellow", "Orange", "Red", "Pink", "Purple", "Green", "Mint", "Brown", "Gold", "Grey", "Graphite", "Black"]
+const PRESET_OPTIONS := ["NeXa Blue", "Apple Dark", "Warm Desk", "Focus Green", "Night Red", "Soft Pink", "Minimal White"]
+const MODE_OPTIONS := ["Normal", "Quiet", "Focus", "Night", "Away", "Demo", "Maintenance"]
+const QUICK_SHELF_OPTIONS := ["Clock", "Calendar", "Reminders", "Tasks", "Study", "Pomodoro", "Games", "Diagnostics", "Network", "Camera", "Air Quality", "Temperature", "Brightness", "Sound", "Quiet Mode", "Remote", "Settings", "LED", "Logs", "Reports", "Exit NeXa"]
 
 var nav := NavigationControllerScript.new()
 var gesture := GestureDetectorScript.new()
@@ -79,6 +98,19 @@ var control_center_scroll_y := 0.0
 var scroll_drag_active := false
 var scroll_drag_area := ""
 var scroll_drag_last_y := 0.0
+var settings_data := {}
+var settings_current_page := "home"
+var settings_scroll_y := 0.0
+var pin_input := ""
+var pin_mode := "set"
+var privacy_status_data := {}
+var settings_status_text := "Saved"
+var settings_dropdown_open := false
+var settings_dropdown_options: Array = []
+var settings_dropdown_section := ""
+var settings_dropdown_key := ""
+var quick_shelf_scroll_y := 0.0
+var quick_shelf_status_text := ""
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDTH, HEIGHT)
@@ -147,6 +179,29 @@ func _gui_input(event: InputEvent) -> void:
 		_update_scroll_drag(event.position)
 	if event is InputEventMouseMotion and slider_drag_active:
 		_update_slider_drag(event.position)
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			if _begin_slider_drag(event.position):
+				return
+			if _begin_scroll_drag(event.position):
+				return
+			gesture.begin(event.position, elapsed)
+		else:
+			if slider_drag_active:
+				_finish_slider_drag()
+				return
+			if scroll_drag_active:
+				scroll_drag_active = false
+				scroll_drag_area = ""
+				return
+			_handle_gesture(gesture.finish(event.position, elapsed), event.position)
+	if event is InputEventScreenDrag:
+		if gesture.is_pressed:
+			gesture.update(event.position)
+		if scroll_drag_active:
+			_update_scroll_drag(event.position)
+		if slider_drag_active:
+			_update_slider_drag(event.position)
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.pressed:
@@ -158,6 +213,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif event.keycode == KEY_DOWN and nav.current_screen == "Face Home":
 		_open_control_center()
 	elif event.keycode == KEY_ESCAPE:
+		if nav.current_screen == "Settings" and settings_dropdown_open:
+			_close_settings_dropdown()
+			_request_redraw()
+			return
+		if nav.current_screen == "Settings" and settings_current_page != "home":
+			_settings_back()
+			_request_redraw()
+			return
 		_go_home()
 	_request_redraw()
 
@@ -165,7 +228,7 @@ func _handle_gesture(action: String, position: Vector2) -> void:
 	if action == "tap":
 		_handle_tap(position)
 	elif action == "long_press" and nav.current_screen == "Face Home":
-		_open_settings_placeholder()
+		_open_settings()
 	elif nav.current_screen == "Face Home":
 		if action == "swipe_left":
 			_open_menu()
@@ -173,15 +236,21 @@ func _handle_gesture(action: String, position: Vector2) -> void:
 			_open_clock()
 		elif action == "swipe_down":
 			_open_control_center()
+		elif action == "swipe_up":
+			_open_quick_shelf()
 	elif nav.current_screen == "Menu" and action == "swipe_right":
 		_go_home()
 	elif nav.current_screen == "Clock" and action == "swipe_left":
 		_go_home()
 	elif nav.current_screen == "Notification Control Center" and action == "swipe_up":
 		_go_home()
+	elif nav.current_screen == "Quick Shelf" and action == "swipe_down":
+		_go_home()
 	_request_redraw()
 
 func _handle_tap(position: Vector2) -> void:
+	if transition_active:
+		return
 	if nav.current_screen == "Face Home":
 		nav.show_status_bubble(elapsed)
 		return
@@ -197,6 +266,12 @@ func _handle_tap(position: Vector2) -> void:
 			return
 		_handle_diagnostics_action_tap(position)
 		_handle_diagnostics_tap(position)
+		return
+	if nav.current_screen == "Settings":
+		_handle_settings_tap(position)
+		return
+	if nav.current_screen == "Quick Shelf":
+		_handle_quick_shelf_panel_tap(position)
 
 func _handle_menu_tap(position: Vector2) -> void:
 	for index in range(MENU_TILES.size()):
@@ -205,6 +280,8 @@ func _handle_menu_tap(position: Vector2) -> void:
 			var tile: Dictionary = MENU_TILES[index] as Dictionary
 			if tile["title"] == "Diagnostics":
 				_open_diagnostics()
+			elif tile["title"] == "Settings":
+				_open_settings()
 			else:
 				_open_placeholder(tile["title"] + " placeholder")
 			return
@@ -248,6 +325,418 @@ func _handle_control_center_tap(position: Vector2) -> void:
 			_open_diagnostics()
 		_request_redraw()
 		return
+
+func _handle_settings_tap(position: Vector2) -> void:
+	if settings_dropdown_open:
+		_handle_settings_dropdown_tap(position)
+		return
+	if Rect2(520, 22, 92, 34).has_point(position):
+		_settings_back()
+		return
+	if settings_current_page == "home":
+		for index in range(SETTINGS_TILES.size()):
+			var rect: Rect2 = _settings_tile_rect(index)
+			if rect.has_point(position):
+				var tile: Dictionary = SETTINGS_TILES[index] as Dictionary
+				var title: String = str(tile["title"])
+				settings_current_page = _settings_page_id(title)
+				settings_scroll_y = 0.0
+				if settings_current_page == "privacy":
+					api.request_get("/api/privacy/status")
+				elif settings_current_page == "network":
+					api.request_get("/api/network")
+				_request_redraw()
+				return
+		return
+	if settings_current_page == "privacy":
+		_handle_pin_tap(position)
+		return
+	if settings_current_page == "quick_shelf":
+		_handle_quick_shelf_tap(position)
+		return
+	_handle_settings_detail_tap(position)
+
+func _settings_back() -> void:
+	if settings_current_page == "home":
+		_go_home()
+	else:
+		settings_current_page = "home"
+		settings_scroll_y = 0.0
+	_request_redraw()
+
+func _settings_page_id(title: String) -> String:
+	return title.to_lower().replace(" ", "_")
+
+func _setting_row_rect(index: int) -> Rect2:
+	return Rect2(44, 114.0 + float(index) * 46.0 - settings_scroll_y, 552, 38)
+
+func _handle_settings_detail_tap(position: Vector2) -> void:
+	var rows: Array = _settings_rows_for_page(settings_current_page)
+	for index in range(rows.size()):
+		var rect: Rect2 = _setting_row_rect(index)
+		if rect.has_point(position):
+			var row: Dictionary = rows[index] as Dictionary
+			_apply_settings_row(row)
+			return
+
+func _handle_quick_shelf_panel_tap(position: Vector2) -> void:
+	var tiles: Array = _settings_enabled_quick_shelf()
+	if tiles.is_empty():
+		tiles = ["Brightness", "Sound", "Quiet Mode", "Network", "Reminders", "Study", "Diagnostics", "Settings"]
+	for index in range(tiles.size()):
+		var rect: Rect2 = _quick_shelf_tile_rect(index)
+		if rect.has_point(position):
+			_activate_quick_shelf_tile(str(tiles[index]))
+			return
+
+func _activate_quick_shelf_tile(tile_name: String) -> void:
+	quick_shelf_status_text = ""
+	if tile_name == "Diagnostics":
+		quick_shelf_status_text = "Opening Diagnostics"
+		_open_diagnostics()
+	elif tile_name == "Settings":
+		quick_shelf_status_text = "Opening Settings"
+		_open_settings()
+	elif tile_name == "Clock":
+		quick_shelf_status_text = "Clock"
+		_open_clock()
+	elif tile_name == "Network":
+		quick_shelf_status_text = "Opening Network"
+		_open_diagnostics_tab("Network")
+	elif tile_name == "Camera":
+		quick_shelf_status_text = "Opening Camera"
+		_open_diagnostics_tab("Camera")
+	elif tile_name == "Logs":
+		quick_shelf_status_text = "Opening Logs"
+		_open_diagnostics_tab("Logs")
+	elif tile_name == "Reports":
+		quick_shelf_status_text = "Opening Reports"
+		_open_diagnostics_tab("Reports")
+	elif tile_name == "Quiet Mode":
+		quiet_mode_local = not quiet_mode_local
+		control_center_data["quiet_mode"] = quiet_mode_local
+		_settings_update("modes", "current_mode", "Quiet" if quiet_mode_local else "Normal")
+		api.request_post("/api/control/quiet-mode", {"enabled": quiet_mode_local})
+		quick_shelf_status_text = "Quiet Mode " + ("On" if quiet_mode_local else "Off")
+	elif tile_name == "Brightness":
+		quick_shelf_status_text = "Brightness " + str(brightness_percent) + "%"
+	elif tile_name == "Sound":
+		quick_shelf_status_text = "Sound " + str(sound_percent) + "%"
+	elif tile_name == "Exit NeXa":
+		quick_shelf_status_text = "Exit NeXa planned"
+		_open_settings_page("exit_nexa")
+	else:
+		quick_shelf_status_text = tile_name + " planned"
+	_request_redraw()
+
+func _open_diagnostics_tab(tab_name: String) -> void:
+	_open_diagnostics()
+	active_tab = tab_name
+	active_tab_data = {}
+	_request_active_diagnostics_tab()
+	_request_redraw()
+
+func _open_settings_page(page: String) -> void:
+	_open_settings()
+	settings_current_page = page
+	settings_scroll_y = 0.0
+
+func _handle_quick_shelf_tap(position: Vector2) -> void:
+	var enabled: Array = _settings_enabled_quick_shelf()
+	for index in range(QUICK_SHELF_OPTIONS.size()):
+		var rect: Rect2 = Rect2(44.0 + float(index % 2) * 282.0, 136.0 + float(int(index / 2)) * 44.0 - settings_scroll_y, 260.0, 36.0)
+		if rect.has_point(position):
+			var name: String = str(QUICK_SHELF_OPTIONS[index])
+			if enabled.has(name):
+				enabled.erase(name)
+			else:
+				enabled.append(name)
+			_settings_update("quick_shelf", "enabled_tiles", enabled)
+			return
+
+func _handle_pin_tap(position: Vector2) -> void:
+	if Rect2(44, 114 - settings_scroll_y, 264, 38).has_point(position):
+		pin_mode = "set"
+		pin_input = ""
+		_request_redraw()
+		return
+	if Rect2(332, 114 - settings_scroll_y, 264, 38).has_point(position):
+		pin_mode = "verify"
+		pin_input = ""
+		_request_redraw()
+		return
+	if Rect2(44, 470 - settings_scroll_y, 264, 38).has_point(position):
+		api.request_post("/api/privacy/lock")
+		pin_input = ""
+		return
+	for index in range(12):
+		var col: int = index % 3
+		var row: int = int(index / 3)
+		var rect: Rect2 = Rect2(178.0 + float(col) * 74.0, 292.0 + float(row) * 42.0 - settings_scroll_y, 62.0, 34.0)
+		if rect.has_point(position):
+			if index < 9:
+				_pin_add(str(index + 1))
+			elif index == 9:
+				pin_input = ""
+			elif index == 10:
+				_pin_add("0")
+			else:
+				_pin_submit()
+			_request_redraw()
+			return
+
+func _pin_add(value: String) -> void:
+	if pin_input.length() < 4:
+		pin_input += value
+
+func _pin_submit() -> void:
+	if pin_input.length() != 4:
+		return
+	if pin_mode == "set":
+		api.request_post("/api/privacy/pin/set", {"pin": pin_input})
+	else:
+		api.request_post("/api/privacy/pin/verify", {"pin": pin_input})
+	pin_input = ""
+
+func _settings_update(section: String, key: String, value) -> void:
+	var section_data = settings_data.get(section, {})
+	if not (section_data is Dictionary):
+		section_data = {}
+	section_data[key] = value
+	settings_data[section] = section_data
+	settings_status_text = "Saving"
+	api.request_post("/api/settings/update", {"section": section, "key": key, "value": value})
+	_request_redraw()
+
+func _settings_update_many(updates: Array) -> void:
+	for update_raw in updates:
+		var update: Dictionary = update_raw as Dictionary
+		var section: String = str(update.get("section", ""))
+		var key: String = str(update.get("key", ""))
+		var value = update.get("value")
+		var section_data = settings_data.get(section, {})
+		if not (section_data is Dictionary):
+			section_data = {}
+		section_data[key] = value
+		settings_data[section] = section_data
+	settings_status_text = "Saving"
+	api.request_post("/api/settings/update-many", {"updates": updates})
+	_request_redraw()
+
+func _apply_settings_row(row: Dictionary) -> void:
+	var section: String = str(row.get("section", ""))
+	var key: String = str(row.get("key", ""))
+	var kind: String = str(row.get("kind", "toggle"))
+	if section == "" or key == "":
+		if str(row.get("action", "")) == "report":
+			api.request_post("/api/reports/generate")
+		elif str(row.get("action", "")) == "benchmark":
+			api.request_post("/api/benchmarks/run")
+		_request_redraw()
+		return
+	var current = _settings_value(section, key, row.get("default"))
+	if row.has("set_value"):
+		_settings_update(section, key, row.get("set_value"))
+	elif kind == "toggle":
+		_settings_update(section, key, not bool(current))
+	elif kind == "number":
+		var next_value: int = int(current) + int(row.get("step", 10))
+		var min_value: int = int(row.get("min", 0))
+		var max_value: int = int(row.get("max", 100))
+		if next_value > max_value:
+			next_value = min_value
+		_settings_update(section, key, next_value)
+	elif settings_current_page == "appearance" and kind == "choice":
+		var appearance_options_raw = row.get("options", [])
+		var appearance_options: Array = []
+		if appearance_options_raw is Array:
+			appearance_options = appearance_options_raw
+		_open_settings_dropdown(section, key, appearance_options)
+	else:
+		var options_raw = row.get("options", [])
+		var options: Array = []
+		if options_raw is Array:
+			options = options_raw
+		_settings_update(section, key, _cycle_value(str(current), options))
+	if section == "modes" and key == "current_mode" and str(_settings_value(section, key, "")) == "Away":
+		api.request_post("/api/privacy/lock")
+
+func _open_settings_dropdown(section: String, key: String, options: Array) -> void:
+	settings_dropdown_open = true
+	settings_dropdown_section = section
+	settings_dropdown_key = key
+	settings_dropdown_options = options.duplicate()
+	_request_redraw()
+
+func _close_settings_dropdown() -> void:
+	settings_dropdown_open = false
+	settings_dropdown_section = ""
+	settings_dropdown_key = ""
+	settings_dropdown_options = []
+
+func _handle_settings_dropdown_tap(position: Vector2) -> void:
+	var panel: Rect2 = _settings_dropdown_rect()
+	if not panel.has_point(position):
+		_close_settings_dropdown()
+		_request_redraw()
+		return
+	for index in range(settings_dropdown_options.size()):
+		var rect: Rect2 = _settings_dropdown_option_rect(index)
+		if rect.has_point(position):
+			var value: String = str(settings_dropdown_options[index])
+			_apply_settings_choice(settings_dropdown_section, settings_dropdown_key, value)
+			_close_settings_dropdown()
+			return
+
+func _apply_settings_choice(section: String, key: String, value: String) -> void:
+	if section == "appearance" and key == "preset":
+		_apply_appearance_preset(value)
+	else:
+		_settings_update(section, key, value)
+
+func _apply_appearance_preset(preset_name: String) -> void:
+	var preset: Dictionary = _appearance_preset_values(preset_name)
+	var updates: Array = [{"section": "appearance", "key": "preset", "value": preset_name}]
+	for key in ["eye_color", "mouth_color", "tile_accent_color", "background_color", "led_color"]:
+		updates.append({"section": "appearance", "key": key, "value": preset.get(key, "Blue")})
+	_settings_update_many(updates)
+
+func _appearance_preset_values(preset_name: String) -> Dictionary:
+	var presets: Dictionary = {
+		"NeXa Blue": {"eye_color": "Blue", "mouth_color": "Blue", "tile_accent_color": "Blue", "background_color": "Black", "led_color": "Blue"},
+		"Apple Dark": {"eye_color": "White", "mouth_color": "White", "tile_accent_color": "Graphite", "background_color": "Black", "led_color": "White"},
+		"Warm Desk": {"eye_color": "Warm White", "mouth_color": "Warm White", "tile_accent_color": "Gold", "background_color": "Brown", "led_color": "Warm White"},
+		"Focus Green": {"eye_color": "Green", "mouth_color": "Green", "tile_accent_color": "Green", "background_color": "Graphite", "led_color": "Green"},
+		"Night Red": {"eye_color": "Red", "mouth_color": "Red", "tile_accent_color": "Red", "background_color": "Black", "led_color": "Red"},
+		"Soft Pink": {"eye_color": "Pink", "mouth_color": "Pink", "tile_accent_color": "Pink", "background_color": "Graphite", "led_color": "Pink"},
+		"Minimal White": {"eye_color": "White", "mouth_color": "White", "tile_accent_color": "White", "background_color": "Black", "led_color": "White"}
+	}
+	var value = presets.get(preset_name, presets["NeXa Blue"])
+	if value is Dictionary:
+		return value
+	return presets["NeXa Blue"]
+
+func _settings_value(section: String, key: String, fallback):
+	var section_data = settings_data.get(section, {})
+	if section_data is Dictionary:
+		return section_data.get(key, fallback)
+	return fallback
+
+func _cycle_value(current: String, options: Array) -> String:
+	if options.is_empty():
+		return current
+	var index: int = options.find(current)
+	if index < 0:
+		return str(options[0])
+	return str(options[(index + 1) % options.size()])
+
+func _settings_enabled_quick_shelf() -> Array:
+	var quick_raw = _settings_value("quick_shelf", "enabled_tiles", [])
+	if quick_raw is Array:
+		return quick_raw.duplicate()
+	return []
+
+func _settings_rows_for_page(page: String) -> Array:
+	if page == "appearance":
+		return [
+			{"title": "Preset", "section": "appearance", "key": "preset", "kind": "choice", "options": PRESET_OPTIONS, "default": "NeXa Blue"},
+			{"title": "Eye color", "section": "appearance", "key": "eye_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Blue"},
+			{"title": "Mouth color", "section": "appearance", "key": "mouth_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Blue"},
+			{"title": "Tile accent", "section": "appearance", "key": "tile_accent_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Blue"},
+			{"title": "Background", "section": "appearance", "key": "background_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Black"},
+			{"title": "LED color", "section": "appearance", "key": "led_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Blue"}
+		]
+	if page == "notifications":
+		return [
+			{"title": "Style", "section": "notifications", "key": "style", "kind": "choice", "options": ["Banner", "Icon only", "Control Center only", "Silent", "LED only", "Face only"], "default": "Banner"},
+			{"title": "Show on Face Home", "section": "notifications", "key": "show_on_face_home", "kind": "toggle", "default": true},
+			{"title": "Icon only", "section": "notifications", "key": "icon_only", "kind": "toggle", "default": false},
+			{"title": "Control Center only", "section": "notifications", "key": "control_center_only", "kind": "toggle", "default": false},
+			{"title": "Use sound", "section": "notifications", "key": "use_sound", "kind": "toggle", "default": true},
+			{"title": "Use LED", "section": "notifications", "key": "use_led", "kind": "toggle", "default": true},
+			{"title": "Face expression", "section": "notifications", "key": "use_face_expression", "kind": "toggle", "default": true},
+			{"title": "Use behaviour", "section": "notifications", "key": "use_behaviour", "kind": "toggle", "default": true},
+			{"title": "Private notifications", "section": "notifications", "key": "private_notifications_enabled", "kind": "toggle", "default": false},
+			{"title": "Private reminders", "section": "notifications", "key": "private_reminders_enabled", "kind": "toggle", "default": false}
+		]
+	if page == "modes":
+		var rows: Array = []
+		for mode_name in MODE_OPTIONS:
+			rows.append({"title": str(mode_name), "section": "modes", "key": "current_mode", "kind": "choice", "options": MODE_OPTIONS, "default": "Normal", "set_value": str(mode_name), "subtitle": _mode_description(str(mode_name))})
+		return rows
+	if page == "display":
+		return [
+			{"title": "Brightness", "section": "display", "key": "brightness_percent", "kind": "number", "default": 65, "step": 10},
+			{"title": "Auto brightness", "section": "display", "key": "auto_brightness", "kind": "toggle", "default": false},
+			{"title": "Clock on Face", "section": "display", "key": "show_clock_on_face", "kind": "toggle", "default": true},
+			{"title": "Date on Face", "section": "display", "key": "show_date_on_face", "kind": "toggle", "default": false},
+			{"title": "Text size", "section": "display", "key": "text_size", "kind": "choice", "options": ["Small", "Normal", "Large"], "default": "Normal"},
+			{"title": "Reduce motion", "section": "display", "key": "reduce_motion", "kind": "toggle", "default": false},
+			{"title": "Screen timeout", "section": "display", "key": "screen_timeout", "kind": "choice", "options": ["planned"], "default": "planned"}
+		]
+	if page == "sound":
+		return [
+			{"title": "Volume", "section": "sound", "key": "volume_percent", "kind": "number", "default": 50, "step": 10},
+			{"title": "Mute", "section": "sound", "key": "muted", "kind": "toggle", "default": false},
+			{"title": "Sound theme", "section": "sound", "key": "sound_theme", "kind": "choice", "options": ["Soft", "Cute", "Minimal", "Sci-fi", "Silent"], "default": "Soft"},
+			{"title": "Button sound", "section": "sound", "key": "button_sound", "kind": "toggle", "default": true},
+			{"title": "Notification sound", "section": "sound", "key": "notification_sound", "kind": "toggle", "default": true},
+			{"title": "Error sound", "section": "sound", "key": "error_sound", "kind": "toggle", "default": true},
+			{"title": "Quiet hours", "section": "sound", "key": "quiet_hours", "kind": "choice", "options": ["planned"], "default": "planned"}
+		]
+	if page == "network":
+		return [
+			{"title": "Current Wi-Fi", "section": "network", "key": "wifi_connect_actions", "kind": "choice", "options": ["dry_run_planned"], "default": "dry_run_planned"},
+			{"title": "Connect planned", "section": "network", "key": "wifi_connect_actions", "kind": "choice", "options": ["dry_run_planned"], "default": "dry_run_planned"},
+			{"title": "Remote Wi-Fi", "section": "network", "key": "remote_wifi_enabled", "kind": "toggle", "default": false},
+			{"title": "Web panel", "section": "network", "key": "wifi_connect_actions", "kind": "choice", "options": ["dry_run_planned"], "default": "dry_run_planned"}
+		]
+	if page == "remote":
+		return [
+			{"title": "Controller", "section": "remote", "key": "controller_enabled", "kind": "toggle", "default": true},
+			{"title": "Remote Wi-Fi", "section": "network", "key": "remote_wifi_enabled", "kind": "toggle", "default": false},
+			{"title": "Pair remote", "section": "remote", "key": "controller_enabled", "kind": "toggle", "default": true},
+			{"title": "Vibration", "section": "remote", "key": "vibration_enabled", "kind": "toggle", "default": false}
+		]
+	if page == "diagnostics":
+		return [
+			{"title": "Collect logs", "section": "diagnostics", "key": "collect_logs", "kind": "toggle", "default": true},
+			{"title": "Log level", "section": "diagnostics", "key": "log_level", "kind": "choice", "options": ["Normal", "Detailed", "Debug"], "default": "Normal"},
+			{"title": "Generate report", "action": "report"},
+			{"title": "Run system check", "action": "benchmark"},
+			{"title": "Run audio check", "action": "benchmark"},
+			{"title": "Run camera check", "action": "benchmark"},
+			{"title": "Clear logs", "section": "diagnostics", "key": "log_level", "kind": "choice", "options": ["Normal"], "default": "Normal"}
+		]
+	if page == "safety" or page == "exit_nexa":
+		return [
+			{"title": "Exit NeXa", "section": "safety", "key": "confirm_exit", "kind": "toggle", "default": true, "subtitle": "Exit UI planned"},
+			{"title": "Restart UI", "section": "safety", "key": "confirm_exit", "kind": "toggle", "default": true, "subtitle": "Planned"},
+			{"title": "Restart API", "section": "safety", "key": "confirm_exit", "kind": "toggle", "default": true, "subtitle": "Planned"},
+			{"title": "Reboot Raspberry Pi", "section": "safety", "key": "confirm_power_actions", "kind": "toggle", "default": true, "subtitle": "Planned only"},
+			{"title": "Power off Raspberry Pi", "section": "safety", "key": "confirm_power_actions", "kind": "toggle", "default": true, "subtitle": "Planned only"}
+		]
+	if page == "about":
+		return [
+			{"title": "NeXa ToTem", "section": "modes", "key": "current_mode", "kind": "choice", "options": MODE_OPTIONS, "default": "Normal", "subtitle": "Smart Desk Companion"},
+			{"title": "Version", "section": "modes", "key": "current_mode", "kind": "choice", "options": MODE_OPTIONS, "default": "Normal", "subtitle": "Prototype"}
+		]
+	return []
+
+func _mode_description(mode_name: String) -> String:
+	if mode_name == "Quiet":
+		return "no distractions"
+	if mode_name == "Focus":
+		return "study/work mode"
+	if mode_name == "Night":
+		return "dim and silent"
+	if mode_name == "Away":
+		return "lock private content"
+	if mode_name == "Demo":
+		return "show product features"
+	if mode_name == "Maintenance":
+		return "diagnostics and testing"
+	return "full behaviour"
 
 func _handle_diagnostics_action_tap(position: Vector2) -> void:
 	if active_tab == "Benchmarks" and Rect2(416, 154, 154, 34).has_point(position):
@@ -321,6 +810,20 @@ func _begin_scroll_drag(position: Vector2) -> bool:
 		scroll_drag_area = "control"
 		scroll_drag_last_y = position.y
 		return true
+	# Settings is a dense clickable grid; drag-scroll starts only from the scrollbar strip
+	# so normal tile and row taps are not consumed before _handle_settings_tap runs.
+	if nav.current_screen == "Settings" and _settings_scrollbar_hit_rect().has_point(position) and _settings_max_scroll() > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "settings"
+		scroll_drag_last_y = position.y
+		return true
+	# Quick Shelf is a clickable tile grid; drag-scroll starts only from the
+	# scrollbar strip so normal tile taps reach _handle_quick_shelf_panel_tap.
+	if nav.current_screen == "Quick Shelf" and _quick_shelf_scrollbar_hit_rect().has_point(position) and _quick_shelf_max_scroll() > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "quick_shelf"
+		scroll_drag_last_y = position.y
+		return true
 	return false
 
 func _update_scroll_drag(position: Vector2) -> void:
@@ -333,6 +836,10 @@ func _handle_scroll_wheel(position: Vector2, amount: float) -> void:
 		_apply_scroll("diagnostics", amount)
 	elif nav.current_screen == "Notification Control Center" and _control_scroll_rect().has_point(position):
 		_apply_scroll("control", amount)
+	elif nav.current_screen == "Settings" and _settings_scroll_rect().has_point(position):
+		_apply_scroll("settings", amount)
+	elif nav.current_screen == "Quick Shelf" and _quick_shelf_scroll_rect().has_point(position):
+		_apply_scroll("quick_shelf", amount)
 
 func _apply_scroll(area: String, amount: float) -> void:
 	if area == "diagnostics":
@@ -341,6 +848,12 @@ func _apply_scroll(area: String, amount: float) -> void:
 	elif area == "control":
 		control_center_scroll_y = clampf(control_center_scroll_y + amount, 0.0, _control_center_max_scroll())
 		_request_redraw()
+	elif area == "settings":
+		settings_scroll_y = clampf(settings_scroll_y + amount, 0.0, _settings_max_scroll())
+		_request_redraw()
+	elif area == "quick_shelf":
+		quick_shelf_scroll_y = clampf(quick_shelf_scroll_y + amount, 0.0, _quick_shelf_max_scroll())
+		_request_redraw()
 
 func _diagnostics_scroll_rect() -> Rect2:
 	return Rect2(24, 138, 592, 318)
@@ -348,11 +861,29 @@ func _diagnostics_scroll_rect() -> Rect2:
 func _control_scroll_rect() -> Rect2:
 	return Rect2(36, 286, 568, 166)
 
+func _settings_scroll_rect() -> Rect2:
+	return Rect2(24, 84, 592, 372)
+
+func _settings_scrollbar_hit_rect() -> Rect2:
+	return Rect2(596, 84, 24, 372)
+
+func _quick_shelf_scroll_rect() -> Rect2:
+	return Rect2(24, 120, 592, 324)
+
+func _quick_shelf_scrollbar_hit_rect() -> Rect2:
+	return Rect2(596, 120, 24, 324)
+
 func _diagnostics_max_scroll() -> float:
 	return maxf(0.0, _diagnostics_content_height() - _diagnostics_scroll_rect().size.y)
 
 func _control_center_max_scroll() -> float:
 	return maxf(0.0, _control_center_content_height() - _control_scroll_rect().size.y)
+
+func _settings_max_scroll() -> float:
+	return maxf(0.0, _settings_content_height() - _settings_scroll_rect().size.y)
+
+func _quick_shelf_max_scroll() -> float:
+	return maxf(0.0, _quick_shelf_content_height() - _quick_shelf_scroll_rect().size.y)
 
 func _diagnostics_content_height() -> float:
 	if active_tab == "Processes":
@@ -374,6 +905,21 @@ func _diagnostics_content_height() -> float:
 func _control_center_content_height() -> float:
 	return 182.0
 
+func _settings_content_height() -> float:
+	if settings_current_page == "home":
+		return 672.0
+	if settings_current_page == "quick_shelf":
+		return 760.0
+	if settings_current_page == "privacy":
+		return 640.0
+	if settings_current_page == "about":
+		return 760.0
+	return 520.0
+
+func _quick_shelf_content_height() -> float:
+	var count: int = max(8, _settings_enabled_quick_shelf().size())
+	return 142.0 + float(ceil(float(count) / 2.0)) * 72.0
+
 func _open_menu() -> void:
 	_navigate_to("Menu", "menu_open")
 
@@ -385,6 +931,12 @@ func _open_control_center() -> void:
 	control_center_refresh_pending = true
 	# Control Center opens from cached data first. API refresh happens after transition to avoid UI lag.
 
+func _open_quick_shelf() -> void:
+	_navigate_to("Quick Shelf", "quick_open")
+	quick_shelf_scroll_y = 0.0
+	if settings_data.is_empty():
+		api.request_get("/api/settings")
+
 func _open_diagnostics() -> void:
 	nav.previous_screen = nav.current_screen
 	nav.current_screen = "Diagnostics"
@@ -394,9 +946,17 @@ func _open_diagnostics() -> void:
 	api.request_get("/api/overview")
 	_request_redraw()
 
+func _open_settings() -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "Settings"
+	transition_active = false
+	settings_current_page = "home"
+	settings_scroll_y = 0.0
+	api.request_get("/api/settings")
+	_request_redraw()
+
 func _open_settings_placeholder() -> void:
-	nav.placeholder_title = "Settings setup is planned"
-	_navigate_to("Settings Setup", "diagnostics")
+	_open_settings()
 
 func _open_placeholder(title: String) -> void:
 	nav.placeholder_title = title
@@ -407,6 +967,8 @@ func _go_home() -> void:
 		return
 	if nav.current_screen == "Diagnostics" and active_tab == "Camera":
 		_stop_camera_preview()
+	if nav.current_screen == "Settings":
+		settings_current_page = "home"
 	var direction := "diagnostics"
 	if nav.current_screen == "Menu":
 		direction = "menu_close"
@@ -414,6 +976,8 @@ func _go_home() -> void:
 		direction = "clock_close"
 	elif nav.current_screen == "Notification Control Center":
 		direction = "control_close"
+	elif nav.current_screen == "Quick Shelf":
+		direction = "quick_close"
 	if direction == "diagnostics":
 		nav.previous_screen = nav.current_screen
 		nav.current_screen = "Face Home"
@@ -517,6 +1081,16 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 		network_detail_data = payload
 		if nav.current_screen == "Diagnostics" and active_tab == "Network":
 			active_tab_data = payload
+	elif endpoint == "/api/settings" or endpoint == "/api/settings/update" or endpoint == "/api/settings/reset-section" or endpoint == "/api/privacy/pin/set":
+		var settings_raw = payload.get("settings", {})
+		if settings_raw is Dictionary:
+			settings_data = settings_raw
+			settings_status_text = "Saved"
+		if endpoint == "/api/privacy/pin/set":
+			api.request_get("/api/privacy/status")
+	elif endpoint == "/api/privacy/status" or endpoint == "/api/privacy/pin/verify" or endpoint == "/api/privacy/lock":
+		privacy_status_data = payload
+		settings_status_text = str(payload.get("message", "Saved"))
 	else:
 		active_tab_data = payload
 		if endpoint == "/api/camera":
@@ -564,7 +1138,7 @@ func _on_camera_frame_received(_endpoint: String, body: PackedByteArray) -> void
 	_request_redraw()
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), ThemeScript.BACKGROUND, true)
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
 	if transition_active:
 		_draw_transition()
 	else:
@@ -586,6 +1160,10 @@ func _draw_transition() -> void:
 			overlay_offset = Vector2(0.0, -HEIGHT * (1.0 - t))
 		"control_close":
 			overlay_offset = Vector2(0.0, -HEIGHT * t)
+		"quick_open":
+			overlay_offset = Vector2(0.0, HEIGHT * (1.0 - t))
+		"quick_close":
+			overlay_offset = Vector2(0.0, HEIGHT * t)
 		_:
 			overlay_offset = Vector2(0.0, 12.0 * (1.0 - t))
 	_draw_face_home()
@@ -612,8 +1190,13 @@ func _draw_screen(screen_name: String, offset: Vector2) -> void:
 		"Notification Control Center":
 			_draw_face_home()
 			_draw_control_center()
+		"Quick Shelf":
+			_draw_face_home()
+			_draw_quick_shelf()
 		"Diagnostics":
 			_draw_diagnostics()
+		"Settings":
+			_draw_settings()
 		_:
 			_draw_placeholder(nav.placeholder_title if nav.placeholder_title != "" else screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -627,6 +1210,8 @@ func _draw_overlay_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_clock()
 		"Notification Control Center":
 			_draw_control_center()
+		"Quick Shelf":
+			_draw_quick_shelf()
 		_:
 			_draw_placeholder(screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -662,10 +1247,10 @@ func _draw_pill(rect: Rect2, color: Color = ThemeScript.PANEL_SOFT, active: bool
 	_draw_rounded_outline(rect, Color(0.34, 0.62, 1.0, 0.35) if active else Color(1.0, 1.0, 1.0, 0.07), radius)
 
 func _draw_tile(rect: Rect2, active: bool = false) -> void:
-	var fill: Color = Color(0.11, 0.32, 0.66, 1.0) if active else Color(0.09, 0.102, 0.125, 1.0)
+	var fill: Color = _settings_color(str(_settings_value("appearance", "tile_accent_color", "Blue")), Color(0.11, 0.32, 0.66, 1.0)) if active else Color(0.09, 0.102, 0.125, 1.0)
 	_draw_card(rect, fill, 22.0, false)
 	if active:
-		_draw_rounded_rect(Rect2(rect.position + Vector2(0.0, 12.0), Vector2(4.0, rect.size.y - 24.0)), ThemeScript.BLUE, 2.0)
+		_draw_rounded_rect(Rect2(rect.position + Vector2(0.0, 12.0), Vector2(4.0, rect.size.y - 24.0)), _settings_color(str(_settings_value("appearance", "tile_accent_color", "Blue")), ThemeScript.BLUE), 2.0)
 
 func _draw_slider_bar(rect: Rect2, percent_value, active: bool = false) -> void:
 	var percent: float = 0.0
@@ -722,15 +1307,47 @@ func _rect_visible(rect: Rect2, view_rect: Rect2) -> bool:
 	return rect.position.y + rect.size.y >= view_rect.position.y and rect.position.y <= view_rect.position.y + view_rect.size.y
 
 func _draw_face_home() -> void:
-	face.draw_face(self, Vector2(WIDTH, HEIGHT), elapsed)
+	face.draw_face(self, Vector2(WIDTH, HEIGHT), elapsed, _settings_color(str(_settings_value("appearance", "eye_color", "Blue")), Color(0.18, 0.58, 1.0, 1.0)), _settings_color(str(_settings_value("appearance", "mouth_color", "Blue")), Color(0.18, 0.58, 1.0, 0.95)))
 	_draw_text(Time.get_datetime_string_from_system(false, true).substr(11, 5), Vector2(538, 34), 17, Color(0.48, 0.62, 0.82, 0.82))
 	if elapsed < nav.status_bubble_until:
 		var bubble: Rect2 = Rect2(198, 350, 244, 58)
 		_draw_card(bubble, Color(0.075, 0.085, 0.105, 0.96), 28.0, false)
 		_draw_text("Status OK", bubble.position + Vector2(28, 37), 20, ThemeScript.TEXT)
 
+func _settings_color(name: String, fallback: Color) -> Color:
+	var colors: Dictionary = {
+		"Blue": Color(0.18, 0.58, 1.0, 1.0),
+		"Sky Blue": Color(0.42, 0.72, 1.0, 1.0),
+		"Cyan": Color(0.1, 0.82, 0.92, 1.0),
+		"White": Color(0.93, 0.96, 1.0, 1.0),
+		"Warm White": Color(1.0, 0.88, 0.68, 1.0),
+		"Yellow": Color(1.0, 0.86, 0.24, 1.0),
+		"Orange": Color(1.0, 0.48, 0.18, 1.0),
+		"Red": Color(1.0, 0.22, 0.22, 1.0),
+		"Pink": Color(1.0, 0.45, 0.74, 1.0),
+		"Purple": Color(0.64, 0.42, 1.0, 1.0),
+		"Green": Color(0.24, 0.78, 0.36, 1.0),
+		"Mint": Color(0.42, 0.92, 0.72, 1.0),
+		"Brown": Color(0.58, 0.38, 0.24, 1.0),
+		"Gold": Color(1.0, 0.68, 0.22, 1.0),
+		"Grey": Color(0.58, 0.62, 0.68, 1.0),
+		"Graphite": Color(0.24, 0.26, 0.30, 1.0),
+		"Black": Color(0.04, 0.045, 0.052, 1.0)
+	}
+	var value = colors.get(name, fallback)
+	if value is Color:
+		return value
+	return fallback
+
+func _theme_background_color() -> Color:
+	var name: String = str(_settings_value("appearance", "background_color", "Black"))
+	if name == "Black":
+		return ThemeScript.BACKGROUND
+	var base: Color = _settings_color(name, ThemeScript.BACKGROUND)
+	return Color(base.r * 0.16, base.g * 0.16, base.b * 0.16, 1.0)
+
 func _draw_menu() -> void:
-	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), ThemeScript.BACKGROUND, true)
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
 	_draw_text("Menu", Vector2(32, 52), 27, ThemeScript.TEXT)
 	for index in range(MENU_TILES.size()):
 		var rect: Rect2 = _menu_tile_rect(index)
@@ -746,7 +1363,7 @@ func _menu_tile_rect(index: int) -> Rect2:
 	return Rect2(28.0 + float(column) * 300.0, 96.0 + float(row) * 86.0, 284.0, 72.0)
 
 func _draw_clock() -> void:
-	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), ThemeScript.BACKGROUND, true)
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
 	var now: Dictionary = Time.get_datetime_dict_from_system()
 	var time_text: String = "%02d:%02d" % [now.hour, now.minute]
 	var date_text: String = "%04d-%02d-%02d" % [now.year, now.month, now.day]
@@ -907,7 +1524,7 @@ func _draw_notification(rect: Rect2, label: String, message: String, view_rect: 
 	_draw_text(message, rect.position + Vector2(116, 25), 14, ThemeScript.TEXT)
 
 func _draw_diagnostics() -> void:
-	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), ThemeScript.BACKGROUND, true)
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
 	_draw_text("Diagnostics", Vector2(26, 40), 26, ThemeScript.TEXT)
 	_draw_pill(Rect2(536, 22, 78, 34), Color(0.10, 0.11, 0.13, 0.94), false)
 	_draw_text("Home", Vector2(557, 43), 12, ThemeScript.TEXT_MUTED)
@@ -1115,6 +1732,234 @@ func _draw_info_row_compact(x: float, y: float, width: float, title: String, sub
 func _draw_button(rect: Rect2, label: String, active: bool) -> void:
 	_draw_tile(rect, active)
 	_draw_centered_text(label, rect.position.x + rect.size.x * 0.5, rect.position.y + 22.0, 11, ThemeScript.TEXT)
+
+func _draw_settings() -> void:
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	_draw_text("Settings", Vector2(26, 44), 26, ThemeScript.TEXT)
+	var back_label: String = "Home" if settings_current_page == "home" else "Back"
+	_draw_pill(Rect2(520, 22, 92, 34), Color(0.10, 0.11, 0.13, 0.94), false)
+	_draw_centered_text(back_label, 566.0, 43.0, 12, ThemeScript.TEXT_MUTED)
+	if settings_current_page == "home":
+		_draw_settings_home()
+	elif settings_current_page == "quick_shelf":
+		_draw_quick_shelf_settings()
+	elif settings_current_page == "privacy":
+		_draw_privacy_settings()
+	else:
+		_draw_settings_detail_page()
+	_draw_scrollbar(_settings_scroll_rect(), settings_scroll_y, _settings_content_height())
+	if settings_dropdown_open:
+		_draw_settings_dropdown()
+
+func _draw_settings_home() -> void:
+	var view_rect: Rect2 = _settings_scroll_rect()
+	for index in range(SETTINGS_TILES.size()):
+		var rect: Rect2 = _settings_tile_rect(index)
+		if not _rect_visible(rect, view_rect):
+			continue
+		var tile: Dictionary = SETTINGS_TILES[index] as Dictionary
+		var active: bool = str(tile["title"]) == "Exit NeXa"
+		_draw_tile(rect, active)
+		_draw_text(str(tile["icon"]), rect.position + Vector2(18, 39), 19, ThemeScript.TEXT)
+		_draw_text(str(tile["title"]), rect.position + Vector2(54, 25), 15, ThemeScript.TEXT)
+		_draw_text(str(tile["subtitle"]), rect.position + Vector2(54, 46), 10, ThemeScript.TEXT_MUTED)
+
+func _settings_tile_rect(index: int) -> Rect2:
+	var column: int = index % 2
+	var row: int = int(index / 2)
+	return Rect2(28.0 + float(column) * 300.0, 92.0 + float(row) * 82.0 - settings_scroll_y, 284.0, 66.0)
+
+func _draw_settings_detail_page() -> void:
+	var view_rect: Rect2 = _settings_scroll_rect()
+	var title: String = settings_current_page.replace("_", " ").capitalize()
+	_draw_text_if_visible(title, Vector2(44, 96 - settings_scroll_y), view_rect, 21, ThemeScript.TEXT)
+	if settings_current_page == "about":
+		_draw_about_settings(view_rect)
+		return
+	var rows: Array = _settings_rows_for_page(settings_current_page)
+	for index in range(rows.size()):
+		var row: Dictionary = rows[index] as Dictionary
+		var rect: Rect2 = _setting_row_rect(index)
+		if not _rect_visible(rect, view_rect):
+			continue
+		var section: String = str(row.get("section", ""))
+		var key: String = str(row.get("key", ""))
+		var value_text: String = str(row.get("subtitle", "Planned"))
+		if section != "" and key != "":
+			var value = _settings_value(section, key, row.get("default", "Pending"))
+			value_text = _format_setting_value(value)
+		var active: bool = settings_current_page == "modes" and str(row.get("title", "")) == str(_settings_value("modes", "current_mode", "Normal"))
+		_draw_settings_row(rect, str(row.get("title", "Setting")), value_text, active)
+	if settings_current_page == "network":
+		_draw_text_if_visible("Wi-Fi connect actions stay dry-run/planned.", Vector2(50, 438 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
+	if settings_current_page == "notifications":
+		var private_on: bool = bool(_settings_value("notifications", "private_notifications_enabled", false)) or bool(_settings_value("notifications", "private_reminders_enabled", false))
+		var pin_enabled: bool = bool(privacy_status_data.get("pin_enabled", false))
+		var note: String = "Private content unlocked" if bool(privacy_status_data.get("unlocked", false)) else ("Go to Privacy to set a 4-digit PIN" if private_on and not pin_enabled else "Private content locked")
+		_draw_text_if_visible(note, Vector2(50, 438 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
+	if settings_current_page == "safety" or settings_current_page == "exit_nexa":
+		_draw_text_if_visible("Exit NeXa? Cancel or Exit UI planned only.", Vector2(50, 438 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
+
+func _draw_settings_row(rect: Rect2, title: String, value: String, active: bool) -> void:
+	_draw_tile(rect, active)
+	_draw_text(_short_text(title, 28), rect.position + Vector2(14, 24), 13, ThemeScript.TEXT)
+	_draw_text(_short_text(value, 28), rect.position + Vector2(310, 24), 11, ThemeScript.TEXT_MUTED)
+
+func _format_setting_value(value) -> String:
+	if value is bool:
+		return "On" if bool(value) else "Off"
+	if value is Array:
+		return str(value.size()) + " selected"
+	return str(value)
+
+func _pin_dots() -> String:
+	var text := ""
+	for index in range(4):
+		text += "*" if index < pin_input.length() else "-"
+	return text
+
+func _draw_quick_shelf_settings() -> void:
+	var view_rect: Rect2 = _settings_scroll_rect()
+	var enabled: Array = _settings_enabled_quick_shelf()
+	_draw_text_if_visible("Quick Shelf", Vector2(44, 96 - settings_scroll_y), view_rect, 21, ThemeScript.TEXT)
+	_draw_text_if_visible(str(enabled.size()) + " selected", Vector2(466, 96 - settings_scroll_y), view_rect, 12, ThemeScript.TEXT_MUTED)
+	for index in range(QUICK_SHELF_OPTIONS.size()):
+		var rect: Rect2 = Rect2(44.0 + float(index % 2) * 282.0, 136.0 + float(int(index / 2)) * 44.0 - settings_scroll_y, 260.0, 36.0)
+		if not _rect_visible(rect, view_rect):
+			continue
+		var name: String = str(QUICK_SHELF_OPTIONS[index])
+		_draw_tile(rect, enabled.has(name))
+		_draw_text(_short_text(name, 22), rect.position + Vector2(14, 23), 12, ThemeScript.TEXT)
+
+func _draw_privacy_settings() -> void:
+	var view_rect: Rect2 = _settings_scroll_rect()
+	_draw_text_if_visible("Privacy", Vector2(44, 96 - settings_scroll_y), view_rect, 21, ThemeScript.TEXT)
+	_draw_button(Rect2(44, 114 - settings_scroll_y, 264, 38), "Set 4-digit PIN", pin_mode == "set")
+	_draw_button(Rect2(332, 114 - settings_scroll_y, 264, 38), "Unlock private", pin_mode == "verify")
+	var unlocked: bool = bool(privacy_status_data.get("unlocked", false))
+	var pin_enabled: bool = bool(privacy_status_data.get("pin_enabled", false))
+	_draw_settings_row(Rect2(44, 166 - settings_scroll_y, 552, 38), "PIN", "Enabled" if pin_enabled else "Not set", false)
+	_draw_settings_row(Rect2(44, 210 - settings_scroll_y, 552, 38), "Private content", "Unlocked" if unlocked else "Locked", unlocked)
+	_draw_text_if_visible("PIN: " + _pin_dots(), Vector2(258, 270 - settings_scroll_y), view_rect, 18, ThemeScript.TEXT)
+	for index in range(12):
+		var col: int = index % 3
+		var row: int = int(index / 3)
+		var rect: Rect2 = Rect2(178.0 + float(col) * 74.0, 292.0 + float(row) * 42.0 - settings_scroll_y, 62.0, 34.0)
+		if not _rect_visible(rect, view_rect):
+			continue
+		var label: String = str(index + 1) if index < 9 else ("Clear" if index == 9 else ("0" if index == 10 else "OK"))
+		_draw_button(rect, label, false)
+	_draw_button(Rect2(44, 470 - settings_scroll_y, 264, 38), "Lock now", false)
+	_draw_settings_row(Rect2(44, 520 - settings_scroll_y, 552, 38), "Private notifications", _format_setting_value(_settings_value("notifications", "private_notifications_enabled", false)), false)
+	_draw_settings_row(Rect2(44, 564 - settings_scroll_y, 552, 38), "Private reminders", _format_setting_value(_settings_value("notifications", "private_reminders_enabled", false)), false)
+
+func _draw_settings_dropdown() -> void:
+	var panel: Rect2 = _settings_dropdown_rect()
+	_draw_rounded_rect(panel, Color(0.052, 0.060, 0.074, 1.0), 20.0)
+	_draw_rounded_outline(panel, Color(1.0, 1.0, 1.0, 0.08), 20.0)
+	_draw_text("Choose " + settings_dropdown_key.replace("_", " "), panel.position + Vector2(18, 28), 14, ThemeScript.TEXT)
+	for index in range(settings_dropdown_options.size()):
+		var rect: Rect2 = _settings_dropdown_option_rect(index)
+		var value: String = str(settings_dropdown_options[index])
+		var active: bool = value == str(_settings_value(settings_dropdown_section, settings_dropdown_key, ""))
+		_draw_tile(rect, active)
+		_draw_text(_short_text(value, 19), rect.position + Vector2(12, 22), 11, ThemeScript.TEXT)
+
+func _settings_dropdown_rect() -> Rect2:
+	return Rect2(82, 92, 476, 330)
+
+func _settings_dropdown_option_rect(index: int) -> Rect2:
+	var column: int = index % 2
+	var row: int = int(index / 2)
+	return Rect2(104.0 + float(column) * 226.0, 136.0 + float(row) * 31.0, 204.0, 25.0)
+
+func _draw_quick_shelf() -> void:
+	var panel: Rect2 = Rect2(20, 86, 600, 374)
+	_draw_rounded_rect(panel, Color(0.052, 0.060, 0.074, 1.0), 28.0)
+	_draw_rounded_outline(panel, Color(1.0, 1.0, 1.0, 0.07), 28.0)
+	_draw_text("Quick Shelf", Vector2(44, 126), 24, ThemeScript.TEXT)
+	_draw_text("Swipe down to close", Vector2(46, 148), 11, ThemeScript.TEXT_MUTED)
+	var tiles: Array = _settings_enabled_quick_shelf()
+	if tiles.is_empty():
+		tiles = ["Brightness", "Sound", "Quiet Mode", "Network", "Reminders", "Study", "Diagnostics", "Settings"]
+	var view_rect: Rect2 = _quick_shelf_scroll_rect()
+	for index in range(tiles.size()):
+		var rect: Rect2 = _quick_shelf_tile_rect(index)
+		if not _rect_visible(rect, view_rect):
+			continue
+		var name: String = str(tiles[index])
+		var active: bool = name == "Quiet Mode" and quiet_mode_local
+		_draw_tile(rect, active)
+		_draw_text(_quick_shelf_icon(name), rect.position + Vector2(14, 34), 18, ThemeScript.TEXT)
+		_draw_text(_short_text(name, 18), rect.position + Vector2(48, 24), 13, ThemeScript.TEXT)
+		_draw_text(_short_text(_quick_shelf_subtitle(name), 20), rect.position + Vector2(48, 45), 10, ThemeScript.TEXT_MUTED)
+	if quick_shelf_status_text != "":
+		_draw_text(quick_shelf_status_text, Vector2(46, 438), 11, ThemeScript.TEXT_MUTED)
+	_draw_scrollbar(view_rect, quick_shelf_scroll_y, _quick_shelf_content_height())
+
+func _quick_shelf_tile_rect(index: int) -> Rect2:
+	var column: int = index % 2
+	var row: int = int(index / 2)
+	return Rect2(44.0 + float(column) * 282.0, 168.0 + float(row) * 72.0 - quick_shelf_scroll_y, 260.0, 58.0)
+
+func _quick_shelf_icon(name: String) -> String:
+	if name == "Brightness":
+		return "☼"
+	if name == "Sound":
+		return "♪"
+	if name == "Quiet Mode":
+		return "!"
+	if name == "Network":
+		return "⌁"
+	if name == "Diagnostics":
+		return "▦"
+	if name == "Settings":
+		return "⚙"
+	if name == "Clock":
+		return "◷"
+	if name == "Camera":
+		return "□"
+	return "◆"
+
+func _quick_shelf_subtitle(name: String) -> String:
+	if name == "Brightness":
+		return str(brightness_percent) + "%"
+	if name == "Sound":
+		return str(sound_percent) + "%"
+	if name == "Quiet Mode":
+		return "On" if quiet_mode_local else "Off"
+	if name in ["Diagnostics", "Settings", "Clock", "Network", "Camera", "Logs", "Reports"]:
+		return "Open"
+	return "Planned"
+
+func _draw_about_settings(view_rect: Rect2) -> void:
+	var rows: Array = [
+		"Project: NeXa ToTem",
+		"Smart Desk Companion",
+		"Author: Andrzej Dul",
+		"Brand/company: DevDul",
+		"Hardware: Raspberry Pi 5 2GB",
+		"Display: 2.8-inch HDMI IPS touch LCD, 640x480",
+		"Camera: CSI camera, ov5647 when present",
+		"Audio: USB speaker",
+		"Planned sensors: BME680/BME688, LTR-329, CAP1188, sound sensor, RGB LEDs",
+		"Remote: controller with screen/joystick and Remote Wi-Fi link planned",
+		"Software: Godot LCD UI, Python localhost diagnostics/settings API",
+		"Renderer: OpenGL ES Compatibility, fixed 640x480 window",
+		"Features: Face Home, Menu, Clock, Control Center, Quick Shelf",
+		"Diagnostics: Wi-Fi details, camera preview, audio, logs, reports, benchmarks",
+		"Settings: Appearance, Notifications, Privacy/PIN, Modes, Quick Shelf",
+		"More settings: Display, Sound, Network, Remote, Diagnostics, Safety/Exit",
+		"Safety: Wi-Fi changes are dry-run/planned",
+		"Safety: Exit and power actions are planned/safe only",
+		"Camera preview is off by default and stops on close/stale timeout"
+	]
+	for index in range(rows.size()):
+		var rect: Rect2 = Rect2(44, 120 + index * 34 - settings_scroll_y, 552, 30)
+		if not _rect_visible(rect, view_rect):
+			continue
+		_draw_card_if_visible(rect, view_rect, Color(0.075, 0.085, 0.102, 0.94), 15.0)
+		_draw_text_if_visible(_short_text(str(rows[index]), 78), rect.position + Vector2(12, 20), view_rect, 11, ThemeScript.TEXT_MUTED)
 
 func _draw_placeholder(title: String) -> void:
 	_draw_soft_panel(Rect2(76, 158, 488, 156), 32.0)

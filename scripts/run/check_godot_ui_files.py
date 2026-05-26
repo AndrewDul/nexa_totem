@@ -63,6 +63,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     run_api = REPO_ROOT / "scripts/run/run_diagnostics_api.py"
     live_api = REPO_ROOT / "system/services/diagnostics/live_api.py"
     camera_preview = REPO_ROOT / "system/services/diagnostics/camera_preview.py"
+    settings_store = REPO_ROOT / "system/services/settings/settings_store.py"
     api_client = scripts_dir / "diagnostics_api_client.gd"
 
     project_text = read_text(project_godot)
@@ -72,6 +73,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     api_client_text = read_text(api_client)
     live_api_text = read_text(live_api)
     camera_preview_text = read_text(camera_preview)
+    settings_store_text = read_text(settings_store)
     live_collectors_text = read_text(REPO_ROOT / "system/services/diagnostics/live_collectors.py")
     job_runner_text = read_text(REPO_ROOT / "system/services/diagnostics/job_runner.py")
     all_text = project_text + "\n" + read_text(main_scene)
@@ -102,6 +104,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("run_diagnostics_api_exists", run_api.exists(), "Diagnostics API runner exists.")
     add("live_api_exists", live_api.exists(), "Diagnostics live API exists.")
     add("camera_preview_exists", camera_preview.exists(), "Camera live preview worker exists.")
+    add("settings_store_exists", settings_store.exists(), "Settings store exists.")
     add("api_localhost", "127.0.0.1" in live_api_text and "8769" in live_api_text, "API binds localhost port 8769.")
 
     for screen_name in SCREEN_NAMES:
@@ -113,6 +116,11 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("godot_no_os_execute", "OS.execute" not in scripts_text, "Godot does not execute shell commands.")
     add("local_runtime_helpers", "func _draw_card" in main_text and "func _draw_pill" in main_text and "func _draw_soft_panel" in main_text and "func _draw_tile" in main_text, "Local callable drawing helpers exist in main.gd.")
     add("no_themescript_runtime_helper_calls", "ThemeScript.draw_card" not in main_text and "ThemeScript.draw_pill" not in main_text and "ThemeScript.draw_soft_panel" not in main_text and "ThemeScript.draw_tile" not in main_text, "main.gd no longer calls ThemeScript drawing helpers at runtime.")
+    add("settings_api_endpoints", "/api/settings" in live_api_text and "/api/settings/update" in live_api_text and "/api/settings/update-many" in live_api_text and "/api/privacy/pin/set" in live_api_text and "/api/privacy/pin/verify" in live_api_text and "/api/privacy/status" in live_api_text, "Settings and privacy API endpoints exist.")
+    add("pin_hash_hidden", "pin_hash" in settings_store_text and "pin_salt" in settings_store_text and "safe_settings" in settings_store_text and "SENSITIVE_KEYS" in settings_store_text, "Settings API can remove PIN hash and salt.")
+    add("pin_four_digits", "valid_pin" in settings_store_text and "len(pin) == 4" in settings_store_text and "pin.isdigit()" in settings_store_text, "PIN is constrained to four digits.")
+    add("private_settings", "private_notifications_enabled" in settings_store_text and "private_reminders_enabled" in settings_store_text, "Private notification and reminder settings exist.")
+    add("no_real_power_commands", "subprocess" not in settings_store_text and "poweroff" not in live_api_text and "shutdown" not in live_api_text and "reboot(" not in live_api_text, "Settings/safety API does not run real power commands.")
     add("api_offline_handling", "api_offline" in api_client_text and "API offline" in main_text, "Godot has API offline handling.")
     add("lazy_polling", "_update_api_polling" in main_text and "_request_active_diagnostics_tab" in main_text, "Godot has lazy active-tab polling markers.")
     add("control_center_light_endpoint", "/api/control-center" in main_text, "Control Center uses the lightweight control-center endpoint.")
@@ -155,6 +163,45 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
         add(f"menu_subtitle_{subtitle}", f'"subtitle": "{subtitle}"' in main_text, f"Menu subtitle {subtitle} is represented.")
     add("control_center_cards", "Control Center" in main_text and "var controls: Array" in main_text and "_draw_notification" in main_text, "Control Center card drawing is represented.")
     add("control_center_safe_mode", "CONTROL_CENTER_SAFE_MODE := true" in main_text and "_draw_control_center_safe" in main_text, "Control Center safe drawing mode exists.")
+    add("settings_ui", "SETTINGS_TILES" in main_text and 'nav.current_screen = "Settings"' in main_text and "_draw_settings_home" in main_text, "Settings UI home exists.")
+    add("settings_pages", all(page in main_text for page in ["Appearance", "Notifications", "Modes", "Quick Shelf", "Display", "Sound", "Network", "Remote", "Privacy", "Diagnostics", "Safety", "Exit NeXa"]), "Settings MVP pages are represented.")
+    add("settings_lists", "COLOR_OPTIONS" in main_text and "MODE_OPTIONS" in main_text and "QUICK_SHELF_OPTIONS" in main_text, "Settings color, mode, and Quick Shelf lists are represented.")
+    add("settings_api_client", "/api/settings" in main_text and "/api/settings/update" in main_text and "/api/privacy/pin/set" in main_text and "/api/privacy/pin/verify" in main_text, "Godot requests settings and PIN endpoints.")
+    add("settings_tap_routing", 'if nav.current_screen == "Settings":' in main_text and "_handle_settings_tap(position)" in main_text, "Settings screen is included in tap routing.")
+    add("settings_tile_hitbox_matches_draw", "func _settings_tile_rect" in main_text and "var rect: Rect2 = _settings_tile_rect(index)" in main_text, "Settings Home draw and hitbox use the same tile rect helper.")
+    add("settings_scroll_does_not_eat_taps", "_settings_scrollbar_hit_rect" in main_text and 'nav.current_screen == "Settings" and _settings_scroll_rect().has_point(position) and _settings_max_scroll() > 0.0' not in main_text, "Settings scroll drag does not consume normal tile taps.")
+    add("settings_row_updates", "_handle_settings_detail_tap" in main_text and "_settings_update" in main_text and "settings_data[section] = section_data" in main_text, "Settings rows update local settings and post to API.")
+    add("settings_quick_shelf_toggle", "_handle_quick_shelf_tap" in main_text and "enabled_tiles" in main_text, "Quick Shelf selection toggles are represented.")
+    add("settings_pin_keypad", "_handle_pin_tap" in main_text and "_pin_submit" in main_text and "/api/privacy/lock" in main_text, "Privacy PIN keypad and lock actions are represented.")
+    add("appearance_live_preview", "_settings_color" in main_text and "face.draw_face(self, Vector2(WIDTH, HEIGHT), elapsed" in main_text and "tile_accent_color" in main_text, "Appearance settings affect live face/accent preview.")
+    add("appearance_background", "_theme_background_color" in main_text and "background_color" in main_text and "_draw_menu" in main_text, "Appearance background color is used in drawing.")
+    add("appearance_dropdowns", "settings_dropdown_open" in main_text and "_draw_settings_dropdown" in main_text and "_handle_settings_dropdown_tap" in main_text, "Appearance dropdown option lists are represented.")
+    add("appearance_presets", "_apply_appearance_preset" in main_text and "_appearance_preset_values" in main_text and "/api/settings/update-many" in main_text, "Appearance presets update multiple keys.")
+    add("quick_shelf_screen", '"Quick Shelf"' in main_text and "_open_quick_shelf" in main_text and "_draw_quick_shelf" in main_text, "Quick Shelf panel screen exists.")
+    add("quick_shelf_swipe", "swipe_up" in main_text and "quick_open" in main_text and "quick_close" in main_text, "Quick Shelf opens with swipe up and closes with swipe down/Escape.")
+    add("quick_shelf_saved_tiles", "_settings_enabled_quick_shelf" in main_text and "enabled_tiles" in main_text and "_quick_shelf_tile_rect" in main_text, "Quick Shelf uses selected settings tiles.")
+    add("quick_shelf_actions", "_activate_quick_shelf_tile" in main_text and "_open_diagnostics_tab" in main_text and "_open_settings_page" in main_text, "Quick Shelf tile click actions are represented.")
+    add("quick_shelf_tap_routing", 'if nav.current_screen == "Quick Shelf":' in main_text and "_handle_quick_shelf_panel_tap(position)" in main_text, "Quick Shelf screen routes taps to the panel tap handler.")
+    quick_tap_func = main_text.split("func _handle_quick_shelf_panel_tap", 1)[1].split("func _activate_quick_shelf_tile", 1)[0] if "func _handle_quick_shelf_panel_tap" in main_text and "func _activate_quick_shelf_tile" in main_text else ""
+    quick_draw_func = main_text.split("func _draw_quick_shelf", 1)[1].split("func _quick_shelf_tile_rect", 1)[0] if "func _draw_quick_shelf" in main_text and "func _quick_shelf_tile_rect" in main_text else ""
+    quick_action_func = main_text.split("func _activate_quick_shelf_tile", 1)[1].split("func _open_diagnostics_tab", 1)[0] if "func _activate_quick_shelf_tile" in main_text and "func _open_diagnostics_tab" in main_text else ""
+    scroll_drag_func = main_text.split("func _begin_scroll_drag", 1)[1].split("func _update_scroll_drag", 1)[0] if "func _begin_scroll_drag" in main_text and "func _update_scroll_drag" in main_text else ""
+    add("quick_shelf_tap_uses_tile_rect", "var rect: Rect2 = _quick_shelf_tile_rect(index)" in quick_tap_func, "Quick Shelf tap hitboxes use the shared tile rect helper.")
+    add("quick_shelf_draw_uses_tile_rect", "var rect: Rect2 = _quick_shelf_tile_rect(index)" in quick_draw_func, "Quick Shelf drawing uses the shared tile rect helper.")
+    add("quick_shelf_scrollbar_drag_only", "_quick_shelf_scrollbar_hit_rect" in main_text and 'nav.current_screen == "Quick Shelf" and _quick_shelf_scroll_rect().has_point(position) and _quick_shelf_max_scroll() > 0.0' not in scroll_drag_func, "Quick Shelf drag-scroll starts from the scrollbar strip, not tile bodies.")
+    add("quick_shelf_status_text", "quick_shelf_status_text" in main_text and 'quick_shelf_status_text = tile_name + " planned"' in main_text, "Quick Shelf planned tiles show visible status text.")
+    add("quick_shelf_settings_action", 'tile_name == "Settings"' in quick_action_func and "_open_settings()" in quick_action_func, "Quick Shelf Settings tile opens Settings.")
+    add("quick_shelf_diagnostics_action", 'tile_name == "Diagnostics"' in quick_action_func and "_open_diagnostics()" in quick_action_func, "Quick Shelf Diagnostics tile opens Diagnostics.")
+    add("quick_shelf_clock_action", 'tile_name == "Clock"' in quick_action_func and "_open_clock()" in quick_action_func, "Quick Shelf Clock tile opens Clock.")
+    add("quick_shelf_network_action", '_open_diagnostics_tab("Network")' in quick_action_func, "Quick Shelf Network tile opens the Network Diagnostics tab.")
+    add("quick_shelf_camera_action", '_open_diagnostics_tab("Camera")' in quick_action_func, "Quick Shelf Camera tile opens the Camera Diagnostics tab.")
+    add("quick_shelf_logs_action", '_open_diagnostics_tab("Logs")' in quick_action_func, "Quick Shelf Logs tile opens the Logs Diagnostics tab.")
+    add("quick_shelf_reports_action", '_open_diagnostics_tab("Reports")' in quick_action_func, "Quick Shelf Reports tile opens the Reports Diagnostics tab.")
+    add("quick_shelf_exit_safe", 'tile_name == "Exit NeXa"' in quick_action_func and '_open_settings_page("exit_nexa")' in quick_action_func and "OS.execute" not in scripts_text and "poweroff" not in quick_action_func and "shutdown" not in quick_action_func and "reboot" not in quick_action_func, "Quick Shelf Exit NeXa opens planned Settings safety page without real power commands.")
+    diagnostics_tab_func = main_text.split("func _open_diagnostics_tab", 1)[1].split("func _open_settings_page", 1)[0] if "func _open_diagnostics_tab" in main_text and "func _open_settings_page" in main_text else ""
+    add("quick_shelf_diagnostics_tab_order", "_open_diagnostics()" in diagnostics_tab_func and "active_tab = tab_name" in diagnostics_tab_func and diagnostics_tab_func.find("_open_diagnostics()") < diagnostics_tab_func.find("active_tab = tab_name") and "_request_active_diagnostics_tab()" in diagnostics_tab_func, "Quick Shelf opens Diagnostics before selecting and requesting the chosen tab.")
+    add("quick_shelf_touch_routing", "InputEventScreenTouch" in main_text and "InputEventScreenDrag" in main_text, "Touch taps and drags route through the same gesture path.")
+    add("about_page", "Andrzej Dul" in main_text and "DevDul" in main_text and "Raspberry Pi 5 2GB" in main_text and "OpenGL ES Compatibility" in main_text, "About page includes project, author, hardware, software, and safety content.")
     add("no_visible_face_home_label", '_draw_text("Face Home"' not in main_text, "Face Home label is not drawn on the home screen.")
     add("vertical_eyes", "_draw_vertical_capsule" in face_text and "_draw_bean_eye" in face_text, "Vertical bean eyes are represented.")
     add("blink_logic", "BLINK_PERIOD" in face_text and "BLINK_DURATION" in face_text and "fmod" in face_text, "Idle blink cycle logic is represented.")

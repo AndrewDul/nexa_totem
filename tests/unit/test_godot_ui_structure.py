@@ -216,6 +216,110 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("_draw_info_row_compact", main)
         self.assertIn("_stop_camera_preview", main)
 
+    def test_settings_ui_is_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        self.assertIn("SETTINGS_TILES", main)
+        self.assertIn('nav.current_screen = "Settings"', main)
+        self.assertIn("settings_current_page", main)
+        self.assertIn("_draw_settings_home", main)
+        self.assertIn("_draw_settings_detail_page", main)
+        self.assertIn('if nav.current_screen == "Settings":', main)
+        self.assertIn("_handle_settings_tap(position)", main)
+        self.assertIn("func _settings_tile_rect", main)
+        self.assertIn("var rect: Rect2 = _settings_tile_rect(index)", main)
+        self.assertIn("_settings_scrollbar_hit_rect", main)
+        self.assertNotIn('nav.current_screen == "Settings" and _settings_scroll_rect().has_point(position) and _settings_max_scroll() > 0.0', main)
+        self.assertIn("_handle_settings_detail_tap", main)
+        self.assertIn("_handle_quick_shelf_tap", main)
+        self.assertIn("_handle_pin_tap", main)
+        self.assertIn("_settings_update", main)
+        self.assertIn("settings_data[section] = section_data", main)
+        for page in [
+            "Appearance",
+            "Notifications",
+            "Modes",
+            "Quick Shelf",
+            "Display",
+            "Sound",
+            "Network",
+            "Remote",
+            "Privacy",
+            "Diagnostics",
+            "Safety",
+            "Exit NeXa",
+        ]:
+            self.assertIn(page, main)
+        self.assertIn("COLOR_OPTIONS", main)
+        self.assertIn("MODE_OPTIONS", main)
+        self.assertIn("QUICK_SHELF_OPTIONS", main)
+        self.assertIn("/api/settings", main)
+        self.assertIn("/api/settings/update", main)
+        self.assertIn("/api/privacy/pin/set", main)
+        self.assertIn("/api/privacy/pin/verify", main)
+        self.assertIn("/api/privacy/lock", main)
+        self.assertIn("_settings_color", main)
+        self.assertIn("face.draw_face(self, Vector2(WIDTH, HEIGHT), elapsed", main)
+        self.assertIn("settings_dropdown_open", main)
+        self.assertIn("_draw_settings_dropdown", main)
+        self.assertIn("_apply_appearance_preset", main)
+        self.assertIn("/api/settings/update-many", main)
+        self.assertIn("_theme_background_color", main)
+        self.assertIn("_open_quick_shelf", main)
+        self.assertIn('"Quick Shelf"', main)
+        self.assertIn("_draw_quick_shelf", main)
+        self.assertIn("_activate_quick_shelf_tile", main)
+        self.assertIn("_handle_quick_shelf_panel_tap(position)", main)
+        self.assertIn("_quick_shelf_scrollbar_hit_rect", main)
+        self.assertIn("swipe_up", main)
+        self.assertIn("swipe_down", main)
+        self.assertIn("Andrzej Dul", main)
+        self.assertIn("DevDul", main)
+        self.assertIn("Raspberry Pi 5 2GB", main)
+        self.assertIn("OpenGL ES Compatibility", main)
+        self.assertNotIn("OS.execute", main)
+
+    def test_quick_shelf_tile_taps_and_actions_are_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        tap_func = main.split("func _handle_quick_shelf_panel_tap", 1)[1].split("func _activate_quick_shelf_tile", 1)[0]
+        action_func = main.split("func _activate_quick_shelf_tile", 1)[1].split("func _open_diagnostics_tab", 1)[0]
+        draw_func = main.split("func _draw_quick_shelf", 1)[1].split("func _quick_shelf_tile_rect", 1)[0]
+        scroll_drag_func = main.split("func _begin_scroll_drag", 1)[1].split("func _update_scroll_drag", 1)[0]
+        diagnostics_tab_func = main.split("func _open_diagnostics_tab", 1)[1].split("func _open_settings_page", 1)[0]
+
+        self.assertIn('if nav.current_screen == "Quick Shelf":', main)
+        self.assertIn("_handle_quick_shelf_panel_tap(position)", main)
+        self.assertIn("var rect: Rect2 = _quick_shelf_tile_rect(index)", tap_func)
+        self.assertIn("var rect: Rect2 = _quick_shelf_tile_rect(index)", draw_func)
+        self.assertIn("quick_shelf_scroll_y", main)
+        self.assertIn("_quick_shelf_scrollbar_hit_rect", scroll_drag_func)
+        self.assertNotIn(
+            'nav.current_screen == "Quick Shelf" and _quick_shelf_scroll_rect().has_point(position) and _quick_shelf_max_scroll() > 0.0',
+            scroll_drag_func,
+        )
+        self.assertIn("InputEventScreenTouch", main)
+        self.assertIn("InputEventScreenDrag", main)
+
+        self.assertIn('tile_name == "Settings"', action_func)
+        self.assertIn("_open_settings()", action_func)
+        self.assertIn('tile_name == "Diagnostics"', action_func)
+        self.assertIn("_open_diagnostics()", action_func)
+        self.assertIn('tile_name == "Clock"', action_func)
+        self.assertIn("_open_clock()", action_func)
+        self.assertIn('_open_diagnostics_tab("Network")', action_func)
+        self.assertIn('_open_diagnostics_tab("Camera")', action_func)
+        self.assertIn('_open_diagnostics_tab("Logs")', action_func)
+        self.assertIn('_open_diagnostics_tab("Reports")', action_func)
+        self.assertIn('quick_shelf_status_text = tile_name + " planned"', action_func)
+        self.assertIn('tile_name == "Exit NeXa"', action_func)
+        self.assertIn('_open_settings_page("exit_nexa")', action_func)
+        self.assertNotIn("OS.execute", main)
+        self.assertNotIn("poweroff", action_func)
+        self.assertNotIn("shutdown", action_func)
+        self.assertNotIn("reboot", action_func)
+
+        self.assertLess(diagnostics_tab_func.find("_open_diagnostics()"), diagnostics_tab_func.find("active_tab = tab_name"))
+        self.assertIn("_request_active_diagnostics_tab()", diagnostics_tab_func)
+
     def test_face_uses_vertical_eyes_without_strong_glow(self):
         face = self.read(GODOT_DIR / "scripts/face_renderer.gd")
         self.assertIn("_draw_vertical_capsule", face)

@@ -4,6 +4,7 @@ from unittest import mock
 
 from system.services.diagnostics import camera_preview, live_api, live_collectors
 from system.services.diagnostics.live_state import LiveState
+from system.services.settings import settings_store
 
 
 class LiveDiagnosticsApiTests(unittest.TestCase):
@@ -230,6 +231,28 @@ class LiveDiagnosticsApiTests(unittest.TestCase):
             text = handle.read()
         self.assertIn("dry_run", text)
         self.assertIn("planned", text)
+
+    def test_settings_api_endpoints_are_represented(self):
+        with open(live_api.__file__, encoding="utf-8") as handle:
+            text = handle.read()
+        for endpoint in [
+            "/api/settings",
+            "/api/settings/update",
+            "/api/settings/update-many",
+            "/api/privacy/pin/set",
+            "/api/privacy/pin/verify",
+            "/api/privacy/status",
+            "/api/settings/reset-section",
+        ]:
+            self.assertIn(endpoint, text)
+
+    def test_settings_api_safe_payload_removes_pin_secret(self):
+        data = settings_store.default_settings()
+        data["privacy"]["pin_hash"] = "secret"
+        data["privacy"]["pin_salt"] = "salt"
+        safe = settings_store.safe_settings(data)
+        self.assertNotIn("pin_hash", safe["privacy"])
+        self.assertNotIn("pin_salt", safe["privacy"])
 
 
 if __name__ == "__main__":

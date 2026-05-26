@@ -11,15 +11,13 @@ const BLINK_DURATION := 0.16
 
 var expression_state := STATE_IDLE
 
-func draw_face(canvas: CanvasItem, viewport_size: Vector2, elapsed: float) -> void:
+func draw_face(canvas: CanvasItem, viewport_size: Vector2, elapsed: float, eye_color: Color = Color(0.18, 0.58, 1.0, 1.0), mouth_color: Color = Color(0.18, 0.58, 1.0, 0.95)) -> void:
 	var center := viewport_size * 0.5
 	var breath := sin(elapsed * 0.72) * 1.0
 	var eye_y := center.y - 58.0 + breath * 3.0
 	var eye_offset := sin(elapsed * 0.32) * 1.4
 	var eye_scale := 1.0 + breath * 0.018
 	var blink_amount: float = _blink_amount(elapsed)
-	var eye_color := Color(0.18, 0.58, 1.0, 1.0)
-	var mouth_color := Color(0.18, 0.58, 1.0, 0.95)
 	var eye_height: float = 104.0 * eye_scale * lerpf(1.0, 0.12, blink_amount)
 	var eye_width: float = 36.0 * eye_scale * lerpf(1.0, 1.08, blink_amount)
 	_draw_bean_eye(canvas, Vector2(center.x - 86.0 + eye_offset, eye_y), eye_width, eye_height, eye_color)
