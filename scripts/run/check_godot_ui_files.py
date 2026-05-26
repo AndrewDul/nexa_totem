@@ -159,6 +159,8 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("menu_tile_width", "284.0" in main_text, "Menu tile width 284 is represented.")
     add("menu_tile_height", "72.0" in main_text, "Menu tile height 72 is represented.")
     add("menu_two_columns", "index % 2" in main_text and "300.0" in main_text, "Menu uses two columns.")
+    menu_tap_func = main_text.split("func _handle_menu_tap", 1)[1].split("func _handle_diagnostics_tap", 1)[0] if "func _handle_menu_tap" in main_text and "func _handle_diagnostics_tap" in main_text else ""
+    add("menu_time_opens_clock", 'tile["title"] == "Time"' in menu_tap_func and "_open_clock()" in menu_tap_func, "Menu Time tile opens Clock.")
     for subtitle in ["Clock", "Focus", "Alerts", "Events", "To-do", "Play", "System", "Setup"]:
         add(f"menu_subtitle_{subtitle}", f'"subtitle": "{subtitle}"' in main_text, f"Menu subtitle {subtitle} is represented.")
     add("control_center_cards", "Control Center" in main_text and "var controls: Array" in main_text and "_draw_notification" in main_text, "Control Center card drawing is represented.")
@@ -177,6 +179,13 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("appearance_background", "_theme_background_color" in main_text and "background_color" in main_text and "_draw_menu" in main_text, "Appearance background color is used in drawing.")
     add("appearance_dropdowns", "settings_dropdown_open" in main_text and "_draw_settings_dropdown" in main_text and "_handle_settings_dropdown_tap" in main_text, "Appearance dropdown option lists are represented.")
     add("appearance_presets", "_apply_appearance_preset" in main_text and "_appearance_preset_values" in main_text and "/api/settings/update-many" in main_text, "Appearance presets update multiple keys.")
+    clock_color_keys = ["time_color", "hour_color", "minute_color", "second_color", "date_color", "day_color", "month_color", "year_color"]
+    add("appearance_clock_color_rows", all(key in main_text for key in clock_color_keys) and all(title in main_text for title in ["Time color", "Hour color", "Minute color", "Second color", "Date color", "Day color", "Month color", "Year color"]), "Appearance rows include Clock time/date color settings.")
+    add("appearance_time_group_update", 'key == "time_color"' in main_text and '"key": "hour_color"' in main_text and '"key": "minute_color"' in main_text and '"key": "second_color"' in main_text and "_settings_update_many" in main_text, "Time color uses grouped update-many behavior.")
+    add("appearance_date_group_update", 'key == "date_color"' in main_text and '"key": "day_color"' in main_text and '"key": "month_color"' in main_text and '"key": "year_color"' in main_text and "_settings_update_many" in main_text, "Date color uses grouped update-many behavior.")
+    add("settings_store_clock_color_defaults", all(f'"{key}"' in settings_store_text for key in clock_color_keys), "Settings store defaults include Clock time/date color keys.")
+    add("settings_store_clock_color_validation", "APPEARANCE_COLOR_KEYS" in settings_store_text and all(f'"{key}"' in settings_store_text for key in clock_color_keys) and "invalid_color" in settings_store_text, "Settings store validates Clock time/date color keys.")
+    add("appearance_presets_clock_colors", all(f'"{key}"' in main_text for key in clock_color_keys) and all(preset in main_text for preset in ["NeXa Blue", "Apple Dark", "Warm Desk", "Focus Green", "Night Red", "Soft Pink", "Minimal White"]), "Appearance presets include Clock time/date colors.")
     add("quick_shelf_screen", '"Quick Shelf"' in main_text and "_open_quick_shelf" in main_text and "_draw_quick_shelf" in main_text, "Quick Shelf panel screen exists.")
     add("quick_shelf_swipe", "swipe_up" in main_text and "quick_open" in main_text and "quick_close" in main_text, "Quick Shelf opens with swipe up and closes with swipe down/Escape.")
     add("quick_shelf_saved_tiles", "_settings_enabled_quick_shelf" in main_text and "enabled_tiles" in main_text and "_quick_shelf_tile_rect" in main_text, "Quick Shelf uses selected settings tiles.")
@@ -216,9 +225,14 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("fast_transitions", "TRANSITION_SECONDS := 0.14" in main_text and "CLOSE_TRANSITION_SECONDS := 0.10" in main_text, "Panel transition durations are 0.16 seconds or less.")
     add("overlay_transition_rendering", "transition_overlay" in main_text and "_draw_overlay_screen" in main_text, "Transitions draw Face Home plus one overlay panel.")
     add("reverse_swipe_close_menu", 'nav.current_screen == "Menu" and action == "swipe_right"' in main_text, "Menu reverse swipe closes to Face Home.")
-    add("reverse_swipe_close_clock", 'nav.current_screen == "Clock" and action == "swipe_left"' in main_text, "Clock reverse swipe closes to Face Home.")
+    gesture_func = main_text.split("func _handle_gesture", 1)[1].split("func _handle_tap", 1)[0] if "func _handle_gesture" in main_text and "func _handle_tap" in main_text else ""
+    add("clock_any_swipe_close", 'nav.current_screen == "Clock" and action.begins_with("swipe_")' in gesture_func and "Clock is a passive glance screen" in gesture_func, "Clock closes to Face Home on any swipe.")
     add("reverse_swipe_close_control_center", 'nav.current_screen == "Notification Control Center" and action == "swipe_up"' in main_text, "Control Center reverse swipe closes to Face Home.")
     add("swipe_up_detected", '"swipe_up"' in gesture_text, "Gesture detector supports swipe up.")
+    clock_draw_func = main_text.split("func _draw_clock", 1)[1].split("func _draw_control_center", 1)[0] if "func _draw_clock" in main_text and "func _draw_control_center" in main_text else ""
+    add("clock_seconds", "now.second" in clock_draw_func and "second_text" in clock_draw_func, "Clock screen includes seconds.")
+    add("clock_time_colors", all(key in clock_draw_func for key in ["hour_color", "minute_color", "second_color"]), "Clock draws hour, minute, and second colors from Appearance.")
+    add("clock_date_colors", all(key in clock_draw_func for key in ["day_color", "month_color", "year_color"]), "Clock draws day, month, and year colors from Appearance.")
     for term in ["draw_card", "rounded", "transition", "Face Home", "Menu", "Clock", "Notification Control Center", "Diagnostics"]:
         add(f"premium_term_{term}", term in all_text, f"{term} is represented in polished UI files.")
 

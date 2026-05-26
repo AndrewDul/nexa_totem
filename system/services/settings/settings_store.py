@@ -40,6 +40,21 @@ PRESET_OPTIONS = {
     "Soft Pink",
     "Minimal White",
 }
+APPEARANCE_COLOR_KEYS = {
+    "eye_color",
+    "mouth_color",
+    "tile_accent_color",
+    "background_color",
+    "led_color",
+    "time_color",
+    "hour_color",
+    "minute_color",
+    "second_color",
+    "date_color",
+    "day_color",
+    "month_color",
+    "year_color",
+}
 
 DEFAULT_SETTINGS = {
     "appearance": {
@@ -48,6 +63,14 @@ DEFAULT_SETTINGS = {
         "tile_accent_color": "Blue",
         "background_color": "Black",
         "led_color": "Blue",
+        "time_color": "White",
+        "hour_color": "White",
+        "minute_color": "White",
+        "second_color": "Grey",
+        "date_color": "Grey",
+        "day_color": "Grey",
+        "month_color": "Grey",
+        "year_color": "Grey",
         "preset": "NeXa Blue",
     },
     "notifications": {
@@ -170,7 +193,7 @@ def update_setting(section, key, value, path=SETTINGS_PATH):
     settings = load_settings(path)
     if section not in DEFAULT_SETTINGS or key not in DEFAULT_SETTINGS[section]:
         return {"status": "error", "error": "unknown_setting"}
-    if section == "appearance" and key in {"eye_color", "mouth_color", "tile_accent_color", "background_color", "led_color"} and value not in COLOR_OPTIONS:
+    if section == "appearance" and key in APPEARANCE_COLOR_KEYS and value not in COLOR_OPTIONS:
         return {"status": "error", "error": "invalid_color"}
     if section == "appearance" and key == "preset" and value not in PRESET_OPTIONS:
         return {"status": "error", "error": "invalid_preset"}
@@ -191,7 +214,7 @@ def update_many(updates, path=SETTINGS_PATH):
         value = item.get("value")
         if section not in DEFAULT_SETTINGS or key not in DEFAULT_SETTINGS[section]:
             return {"status": "error", "error": "unknown_setting"}
-        if section == "appearance" and key in {"eye_color", "mouth_color", "tile_accent_color", "background_color", "led_color"} and value not in COLOR_OPTIONS:
+        if section == "appearance" and key in APPEARANCE_COLOR_KEYS and value not in COLOR_OPTIONS:
             return {"status": "error", "error": "invalid_color"}
         if section == "appearance" and key == "preset" and value not in PRESET_OPTIONS:
             return {"status": "error", "error": "invalid_preset"}

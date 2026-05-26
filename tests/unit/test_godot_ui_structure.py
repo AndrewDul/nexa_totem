@@ -183,6 +183,18 @@ class GodotUiStructureTests(unittest.TestCase):
         ]:
             self.assertIn(f'"subtitle": "{subtitle}"', main)
 
+    def test_menu_time_tile_opens_clock(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        menu_tap = main.split("func _handle_menu_tap", 1)[1].split("func _handle_diagnostics_tap", 1)[0]
+        self.assertIn('tile["title"] == "Time"', menu_tap)
+        self.assertIn("_open_clock()", menu_tap)
+        self.assertIn('tile["title"] == "Diagnostics"', menu_tap)
+        self.assertIn("_open_diagnostics()", menu_tap)
+        self.assertIn('tile["title"] == "Settings"', menu_tap)
+        self.assertIn("_open_settings()", menu_tap)
+        time_branch = menu_tap.split('tile["title"] == "Time"', 1)[1].split('elif tile["title"] == "Diagnostics"', 1)[0]
+        self.assertNotIn("_open_placeholder", time_branch)
+
     def test_control_center_cards_are_represented(self):
         main = self.read(GODOT_DIR / "scripts/main.gd")
         self.assertIn("Control Center", main)
@@ -264,6 +276,25 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("_apply_appearance_preset", main)
         self.assertIn("/api/settings/update-many", main)
         self.assertIn("_theme_background_color", main)
+        for row in [
+            "Time color",
+            "Hour color",
+            "Minute color",
+            "Second color",
+            "Date color",
+            "Day color",
+            "Month color",
+            "Year color",
+        ]:
+            self.assertIn(row, main)
+        self.assertIn('key == "time_color"', main)
+        self.assertIn('key == "date_color"', main)
+        self.assertIn('"key": "hour_color"', main)
+        self.assertIn('"key": "minute_color"', main)
+        self.assertIn('"key": "second_color"', main)
+        self.assertIn('"key": "day_color"', main)
+        self.assertIn('"key": "month_color"', main)
+        self.assertIn('"key": "year_color"', main)
         self.assertIn("_open_quick_shelf", main)
         self.assertIn('"Quick Shelf"', main)
         self.assertIn("_draw_quick_shelf", main)
@@ -395,9 +426,28 @@ class GodotUiStructureTests(unittest.TestCase):
         main = self.read(GODOT_DIR / "scripts/main.gd")
         gesture = self.read(GODOT_DIR / "scripts/gesture_detector.gd")
         self.assertIn('nav.current_screen == "Menu" and action == "swipe_right"', main)
-        self.assertIn('nav.current_screen == "Clock" and action == "swipe_left"', main)
+        self.assertIn('nav.current_screen == "Clock" and action.begins_with("swipe_")', main)
+        self.assertIn("Clock is a passive glance screen, so any swipe returns to Face Home.", main)
         self.assertIn('nav.current_screen == "Notification Control Center" and action == "swipe_up"', main)
         self.assertIn('"swipe_up"', gesture)
+        for action in ["swipe_left", "swipe_right", "swipe_up", "swipe_down"]:
+            self.assertIn(action, gesture if action == "swipe_up" else main + gesture)
+
+    def test_clock_shows_seconds_and_appearance_colors(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        draw_clock = main.split("func _draw_clock", 1)[1].split("func _draw_control_center", 1)[0]
+        self.assertIn("now.second", draw_clock)
+        self.assertIn("second_text", draw_clock)
+        for key in [
+            "hour_color",
+            "minute_color",
+            "second_color",
+            "day_color",
+            "month_color",
+            "year_color",
+        ]:
+            self.assertIn(key, draw_clock)
+        self.assertIn("_draw_centered_segments", draw_clock)
 
     def test_premium_style_terms_are_represented(self):
         text = self._all_godot_text()

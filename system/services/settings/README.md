@@ -7,8 +7,11 @@
 - Updates validate known sections and keys before saving.
 - `POST /api/settings/update` is used by the Godot Settings UI for row changes.
 - `POST /api/settings/update-many` saves grouped updates such as Appearance presets.
+- `POST /api/settings/update-many` also supports grouped Appearance time/date color updates.
 - `POST /api/settings/reset-section` can restore a known section to defaults.
 - Appearance color values are validated against the built-in color list.
+- Appearance stores clock/date color keys: `time_color`, `hour_color`, `minute_color`, `second_color`, `date_color`, `day_color`, `month_color`, and `year_color`.
+- Grouped Time color updates apply to hour, minute, and second colors; grouped Date color updates apply to day, month, and year colors.
 - Appearance presets are validated against the built-in preset list.
 - PINs are never stored raw; the store saves a salt and PBKDF2 hash.
 - PIN setup uses `/api/privacy/pin/set`, unlock uses `/api/privacy/pin/verify`, and manual locking uses `/api/privacy/lock`.

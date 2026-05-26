@@ -15,6 +15,17 @@ class SettingsStoreTests(unittest.TestCase):
         self.assertIn("appearance", data)
         self.assertIn("private_notifications_enabled", data["notifications"])
         self.assertIn("private_reminders_enabled", data["notifications"])
+        for key in [
+            "time_color",
+            "hour_color",
+            "minute_color",
+            "second_color",
+            "date_color",
+            "day_color",
+            "month_color",
+            "year_color",
+        ]:
+            self.assertIn(key, data["appearance"])
 
     def test_broken_settings_file_falls_back(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -35,10 +46,14 @@ class SettingsStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "nexa_settings.json"
             ok = settings_store.update_setting("appearance", "background_color", "Graphite", path)
+            clock_ok = settings_store.update_setting("appearance", "second_color", "Gold", path)
             bad_color = settings_store.update_setting("appearance", "background_color", "Invisible", path)
+            bad_clock_color = settings_store.update_setting("appearance", "hour_color", "Invisible", path)
             bad_preset = settings_store.update_setting("appearance", "preset", "Missing", path)
         self.assertEqual(ok["status"], "ok")
+        self.assertEqual(clock_ok["status"], "ok")
         self.assertEqual(bad_color["status"], "error")
+        self.assertEqual(bad_clock_color["status"], "error")
         self.assertEqual(bad_preset["status"], "error")
 
     def test_update_many_saves_preset_values(self):
@@ -53,6 +68,31 @@ class SettingsStoreTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(data["appearance"]["preset"], "Night Red")
         self.assertEqual(data["appearance"]["eye_color"], "Red")
+
+    def test_update_many_can_update_time_group_colors(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "nexa_settings.json"
+            payload = settings_store.update_many([
+                {"section": "appearance", "key": "time_color", "value": "Cyan"},
+                {"section": "appearance", "key": "hour_color", "value": "Cyan"},
+                {"section": "appearance", "key": "minute_color", "value": "Cyan"},
+                {"section": "appearance", "key": "second_color", "value": "Cyan"},
+            ], path)
+            data = settings_store.load_settings(path)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(data["appearance"]["time_color"], "Cyan")
+        self.assertEqual(data["appearance"]["hour_color"], "Cyan")
+        self.assertEqual(data["appearance"]["minute_color"], "Cyan")
+        self.assertEqual(data["appearance"]["second_color"], "Cyan")
+
+    def test_update_many_rejects_invalid_clock_color(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "nexa_settings.json"
+            payload = settings_store.update_many([
+                {"section": "appearance", "key": "day_color", "value": "Invisible"},
+            ], path)
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["error"], "invalid_color")
 
     def test_reset_section_restores_defaults(self):
         with tempfile.TemporaryDirectory() as temp_dir:

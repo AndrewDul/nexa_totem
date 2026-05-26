@@ -238,9 +238,10 @@ func _handle_gesture(action: String, position: Vector2) -> void:
 			_open_control_center()
 		elif action == "swipe_up":
 			_open_quick_shelf()
-	elif nav.current_screen == "Menu" and action == "swipe_right":
+	elif nav.current_screen == "Clock" and action.begins_with("swipe_"):
+		# Clock is a passive glance screen, so any swipe returns to Face Home.
 		_go_home()
-	elif nav.current_screen == "Clock" and action == "swipe_left":
+	elif nav.current_screen == "Menu" and action == "swipe_right":
 		_go_home()
 	elif nav.current_screen == "Notification Control Center" and action == "swipe_up":
 		_go_home()
@@ -278,7 +279,9 @@ func _handle_menu_tap(position: Vector2) -> void:
 		var rect: Rect2 = _menu_tile_rect(index)
 		if rect.has_point(position):
 			var tile: Dictionary = MENU_TILES[index] as Dictionary
-			if tile["title"] == "Diagnostics":
+			if tile["title"] == "Time":
+				_open_clock()
+			elif tile["title"] == "Diagnostics":
 				_open_diagnostics()
 			elif tile["title"] == "Settings":
 				_open_settings()
@@ -591,25 +594,39 @@ func _handle_settings_dropdown_tap(position: Vector2) -> void:
 func _apply_settings_choice(section: String, key: String, value: String) -> void:
 	if section == "appearance" and key == "preset":
 		_apply_appearance_preset(value)
+	elif section == "appearance" and key == "time_color":
+		_settings_update_many([
+			{"section": "appearance", "key": "time_color", "value": value},
+			{"section": "appearance", "key": "hour_color", "value": value},
+			{"section": "appearance", "key": "minute_color", "value": value},
+			{"section": "appearance", "key": "second_color", "value": value}
+		])
+	elif section == "appearance" and key == "date_color":
+		_settings_update_many([
+			{"section": "appearance", "key": "date_color", "value": value},
+			{"section": "appearance", "key": "day_color", "value": value},
+			{"section": "appearance", "key": "month_color", "value": value},
+			{"section": "appearance", "key": "year_color", "value": value}
+		])
 	else:
 		_settings_update(section, key, value)
 
 func _apply_appearance_preset(preset_name: String) -> void:
 	var preset: Dictionary = _appearance_preset_values(preset_name)
 	var updates: Array = [{"section": "appearance", "key": "preset", "value": preset_name}]
-	for key in ["eye_color", "mouth_color", "tile_accent_color", "background_color", "led_color"]:
+	for key in ["eye_color", "mouth_color", "tile_accent_color", "background_color", "led_color", "time_color", "hour_color", "minute_color", "second_color", "date_color", "day_color", "month_color", "year_color"]:
 		updates.append({"section": "appearance", "key": key, "value": preset.get(key, "Blue")})
 	_settings_update_many(updates)
 
 func _appearance_preset_values(preset_name: String) -> Dictionary:
 	var presets: Dictionary = {
-		"NeXa Blue": {"eye_color": "Blue", "mouth_color": "Blue", "tile_accent_color": "Blue", "background_color": "Black", "led_color": "Blue"},
-		"Apple Dark": {"eye_color": "White", "mouth_color": "White", "tile_accent_color": "Graphite", "background_color": "Black", "led_color": "White"},
-		"Warm Desk": {"eye_color": "Warm White", "mouth_color": "Warm White", "tile_accent_color": "Gold", "background_color": "Brown", "led_color": "Warm White"},
-		"Focus Green": {"eye_color": "Green", "mouth_color": "Green", "tile_accent_color": "Green", "background_color": "Graphite", "led_color": "Green"},
-		"Night Red": {"eye_color": "Red", "mouth_color": "Red", "tile_accent_color": "Red", "background_color": "Black", "led_color": "Red"},
-		"Soft Pink": {"eye_color": "Pink", "mouth_color": "Pink", "tile_accent_color": "Pink", "background_color": "Graphite", "led_color": "Pink"},
-		"Minimal White": {"eye_color": "White", "mouth_color": "White", "tile_accent_color": "White", "background_color": "Black", "led_color": "White"}
+		"NeXa Blue": {"eye_color": "Blue", "mouth_color": "Blue", "tile_accent_color": "Blue", "background_color": "Black", "led_color": "Blue", "time_color": "White", "hour_color": "White", "minute_color": "White", "second_color": "Blue", "date_color": "Grey", "day_color": "Grey", "month_color": "Grey", "year_color": "Grey"},
+		"Apple Dark": {"eye_color": "White", "mouth_color": "White", "tile_accent_color": "Graphite", "background_color": "Black", "led_color": "White", "time_color": "White", "hour_color": "White", "minute_color": "White", "second_color": "Grey", "date_color": "Grey", "day_color": "Grey", "month_color": "Grey", "year_color": "Grey"},
+		"Warm Desk": {"eye_color": "Warm White", "mouth_color": "Warm White", "tile_accent_color": "Gold", "background_color": "Brown", "led_color": "Warm White", "time_color": "Warm White", "hour_color": "Warm White", "minute_color": "Warm White", "second_color": "Gold", "date_color": "Warm White", "day_color": "Warm White", "month_color": "Warm White", "year_color": "Warm White"},
+		"Focus Green": {"eye_color": "Green", "mouth_color": "Green", "tile_accent_color": "Green", "background_color": "Graphite", "led_color": "Green", "time_color": "White", "hour_color": "White", "minute_color": "White", "second_color": "Green", "date_color": "Green", "day_color": "Green", "month_color": "Green", "year_color": "Green"},
+		"Night Red": {"eye_color": "Red", "mouth_color": "Red", "tile_accent_color": "Red", "background_color": "Black", "led_color": "Red", "time_color": "Red", "hour_color": "Red", "minute_color": "Red", "second_color": "Red", "date_color": "Red", "day_color": "Red", "month_color": "Red", "year_color": "Red"},
+		"Soft Pink": {"eye_color": "Pink", "mouth_color": "Pink", "tile_accent_color": "Pink", "background_color": "Graphite", "led_color": "Pink", "time_color": "White", "hour_color": "White", "minute_color": "White", "second_color": "Pink", "date_color": "Pink", "day_color": "Pink", "month_color": "Pink", "year_color": "Pink"},
+		"Minimal White": {"eye_color": "White", "mouth_color": "White", "tile_accent_color": "White", "background_color": "Black", "led_color": "White", "time_color": "White", "hour_color": "White", "minute_color": "White", "second_color": "Grey", "date_color": "White", "day_color": "White", "month_color": "White", "year_color": "White"}
 	}
 	var value = presets.get(preset_name, presets["NeXa Blue"])
 	if value is Dictionary:
@@ -644,7 +661,15 @@ func _settings_rows_for_page(page: String) -> Array:
 			{"title": "Mouth color", "section": "appearance", "key": "mouth_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Blue"},
 			{"title": "Tile accent", "section": "appearance", "key": "tile_accent_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Blue"},
 			{"title": "Background", "section": "appearance", "key": "background_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Black"},
-			{"title": "LED color", "section": "appearance", "key": "led_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Blue"}
+			{"title": "LED color", "section": "appearance", "key": "led_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Blue"},
+			{"title": "Time color", "section": "appearance", "key": "time_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "White"},
+			{"title": "Hour color", "section": "appearance", "key": "hour_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "White"},
+			{"title": "Minute color", "section": "appearance", "key": "minute_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "White"},
+			{"title": "Second color", "section": "appearance", "key": "second_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Grey"},
+			{"title": "Date color", "section": "appearance", "key": "date_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Grey"},
+			{"title": "Day color", "section": "appearance", "key": "day_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Grey"},
+			{"title": "Month color", "section": "appearance", "key": "month_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Grey"},
+			{"title": "Year color", "section": "appearance", "key": "year_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Grey"}
 		]
 	if page == "notifications":
 		return [
@@ -908,6 +933,8 @@ func _control_center_content_height() -> float:
 func _settings_content_height() -> float:
 	if settings_current_page == "home":
 		return 672.0
+	if settings_current_page == "appearance":
+		return 760.0
 	if settings_current_page == "quick_shelf":
 		return 760.0
 	if settings_current_page == "privacy":
@@ -1365,13 +1392,49 @@ func _menu_tile_rect(index: int) -> Rect2:
 func _draw_clock() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
 	var now: Dictionary = Time.get_datetime_dict_from_system()
-	var time_text: String = "%02d:%02d" % [now.hour, now.minute]
-	var date_text: String = "%04d-%02d-%02d" % [now.year, now.month, now.day]
-	_draw_centered_text(time_text, WIDTH * 0.5, 226.0, 76, Color(0.93, 0.96, 1.0, 1.0))
-	_draw_centered_text(date_text, WIDTH * 0.5, 274.0, 20, Color(0.58, 0.70, 0.88, 0.92))
-	draw_circle(Vector2(320, 332), 8.0 + sin(elapsed * 0.9) * 1.2, Color(0.18, 0.58, 1.0, 0.92))
+	var hour_text: String = "%02d" % now.hour
+	var minute_text: String = "%02d" % now.minute
+	var second_text: String = "%02d" % now.second
+	var day_text: String = "%02d" % now.day
+	var month_text: String = "%02d" % now.month
+	var year_text: String = "%04d" % now.year
+	var hour_color: Color = _settings_color(str(_settings_value("appearance", "hour_color", "White")), Color(0.93, 0.96, 1.0, 1.0))
+	var minute_color: Color = _settings_color(str(_settings_value("appearance", "minute_color", "White")), Color(0.93, 0.96, 1.0, 1.0))
+	var second_color: Color = _settings_color(str(_settings_value("appearance", "second_color", "Grey")), Color(0.58, 0.62, 0.68, 1.0))
+	var day_color: Color = _settings_color(str(_settings_value("appearance", "day_color", "Grey")), Color(0.58, 0.62, 0.68, 1.0))
+	var month_color: Color = _settings_color(str(_settings_value("appearance", "month_color", "Grey")), Color(0.58, 0.62, 0.68, 1.0))
+	var year_color: Color = _settings_color(str(_settings_value("appearance", "year_color", "Grey")), Color(0.58, 0.62, 0.68, 1.0))
+	_draw_centered_segments([
+		{"text": hour_text, "size": 76, "color": hour_color},
+		{"text": " : ", "size": 52, "color": Color(0.58, 0.70, 0.88, 0.76)},
+		{"text": minute_text, "size": 76, "color": minute_color},
+		{"text": " : ", "size": 42, "color": Color(0.58, 0.70, 0.88, 0.64)},
+		{"text": second_text, "size": 46, "color": second_color}
+	], WIDTH * 0.5, 226.0)
+	_draw_centered_segments([
+		{"text": day_text, "size": 22, "color": day_color},
+		{"text": " / ", "size": 18, "color": Color(0.44, 0.54, 0.68, 0.72)},
+		{"text": month_text, "size": 22, "color": month_color},
+		{"text": " / ", "size": 18, "color": Color(0.44, 0.54, 0.68, 0.72)},
+		{"text": year_text, "size": 22, "color": year_color}
+	], WIDTH * 0.5, 280.0)
+	draw_circle(Vector2(320, 332), 8.0, Color(0.18, 0.58, 1.0, 0.82))
 	# Future clock settings: show time on face, show date on face, auto show clock screen.
 	# Future timing settings: show clock every X minutes, show clock duration seconds.
+
+func _draw_centered_segments(segments: Array, center_x: float, baseline_y: float) -> void:
+	var total_width := 0.0
+	for raw_segment in segments:
+		var segment: Dictionary = raw_segment as Dictionary
+		total_width += _font().get_string_size(str(segment.get("text", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, int(segment.get("size", 18))).x
+	var cursor_x: float = center_x - total_width * 0.5
+	for raw_segment in segments:
+		var segment: Dictionary = raw_segment as Dictionary
+		var text: String = str(segment.get("text", ""))
+		var size: int = int(segment.get("size", 18))
+		var color: Color = segment.get("color", ThemeScript.TEXT)
+		_draw_text(text, Vector2(cursor_x, baseline_y), size, color)
+		cursor_x += _font().get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x
 
 func _draw_control_center() -> void:
 	if CONTROL_CENTER_SAFE_MODE:

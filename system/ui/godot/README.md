@@ -15,6 +15,9 @@ Face Home is the center of the UI.
 - Swipe down to open Notification Control Center.
 - Tap the face to show a small status bubble.
 - Long press the face to show a setup placeholder.
+- Menu Time opens the same Clock screen as the Face Home swipe gesture.
+- Clock shows hours, minutes, seconds, day, month, and year.
+- Clock closes back to Face Home with any swipe.
 
 The current visual direction is polished toward a premium Apple-like style while staying lightweight for Raspberry Pi 5 2GB.
 
@@ -74,6 +77,7 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Appearance covers presets, eye color, mouth color, tile accent, background, and LED color.
 - Appearance can update the Face Home eye/mouth preview colors and active tile accent.
 - Appearance uses lightweight dropdown-style option lists for colors and presets.
+- Appearance can customize whole time, hour, minute, second, whole date, day, month, and year colors.
 - Theme presets update eye, mouth, tile accent, background, and LED color together.
 - Background and active tile accent changes are visible in the live UI.
 - Notifications covers style, Face Home display, sound, LED, face expression, behaviour, private notifications, and private reminders.

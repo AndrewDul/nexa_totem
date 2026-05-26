@@ -357,3 +357,17 @@ I made Quick Shelf tiles open Settings, Diagnostics, Clock, and selected Diagnos
 I kept unfinished Quick Shelf tiles as visible planned actions.
 
 I kept Exit NeXa planned/safe only.
+
+## 2026-05-25 — Clock Menu Routing and Appearance Time Colors
+
+I wired the Menu Time tile to open the Clock screen.
+
+I made the Clock screen close back to Face Home with any swipe.
+
+I added seconds to the Clock screen.
+
+I added Appearance color settings for time, hour, minute, second, date, day, month, and year.
+
+I made grouped Time color and Date color updates apply to their related parts.
+
+I kept the UI fixed at 640x480 and OpenGL/Compatibility.
