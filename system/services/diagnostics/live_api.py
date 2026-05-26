@@ -27,6 +27,7 @@ from system.services.diagnostics.live_collectors import (
 from system.services.diagnostics.live_state import LiveState, ensure_runtime_dirs
 from system.services.settings import settings_store
 from system.services.study import study_store
+from system.services.reminders import reminders_store
 
 
 HOST = "127.0.0.1"
@@ -137,6 +138,14 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
                 self._json(study_store.notes())
             elif path == "/api/study/settings/stats":
                 self._json(study_store.settings_stats())
+            elif path == "/api/reminders/overview":
+                self._json(reminders_store.overview())
+            elif path == "/api/reminders/list":
+                self._json(reminders_store.list_reminders())
+            elif path == "/api/reminders/due":
+                self._json(reminders_store.due())
+            elif path == "/api/reminders/settings/stats":
+                self._json(reminders_store.settings_stats())
             elif path == "/api/overview":
                 self._json(cached(STATE, "overview", TTL_SECONDS["overview"], lambda: overview_data(STATE)))
             elif path == "/api/system":
@@ -238,6 +247,18 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
             self._json(study_store.create_note(data.get("target_type", "study"), data.get("target_id", 0), data.get("note_text", "")))
         elif path == "/api/study/settings/delete":
             self._json(study_store.delete_action(data.get("action", ""), data.get("confirm_text", ""), data.get("target_id", 0)))
+        elif path == "/api/reminders/create":
+            self._json(reminders_store.create(data.get("title", ""), data.get("notes", ""), data.get("due_at", ""), bool(data.get("is_private", False))))
+        elif path == "/api/reminders/update":
+            self._json(reminders_store.update(data.get("id", 0), data.get("title", ""), data.get("notes", ""), data.get("due_at", ""), bool(data.get("is_private", False))))
+        elif path == "/api/reminders/delete":
+            self._json(reminders_store.delete(data.get("id", 0), data.get("confirm_text", "")))
+        elif path == "/api/reminders/dismiss":
+            self._json(reminders_store.dismiss(data.get("id", 0)))
+        elif path == "/api/reminders/mark-triggered":
+            self._json(reminders_store.mark_triggered(data.get("id", 0)))
+        elif path == "/api/reminders/snooze":
+            self._json(reminders_store.snooze(data.get("id", 0), data.get("minutes", 5)))
         elif path == "/api/benchmarks/run":
             self._json(start_benchmarks(STATE))
         elif path == "/api/reports/generate":

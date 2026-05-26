@@ -455,3 +455,67 @@ I redesigned Quizzes into a selected-quiz list plus separate solve screen with v
 I redesigned Languages into selected-list edit and practice screens with typed meaning checking.
 
 I kept the UI touch-friendly on 640x480.
+
+## 2026-05-26 — Local Reminders App and Reminder Notifications
+
+I added the Reminders app in Menu.
+
+I added a local SQLite reminders database under var/data/reminders/nexa_reminders.db.
+
+I added Add/Edit/Delete reminder flows.
+
+I split reminders into Upcoming and Past tables.
+
+I kept past reminders after due time so the user can reuse/edit/delete them manually.
+
+I added due reminder notifications on Face Home, top indicator, and Control Center/notification area.
+
+I integrated private reminders with the existing PIN privacy system.
+
+I added Reminders to Quick Shelf.
+
+I added tests and validators for reminders.
+
+## 2026-05-26 — Reminder Notification Trigger and Private PIN Fix
+
+I fixed due reminder polling so reminders actually appear on Face Home, top badge, and Control Center.
+
+I fixed the Reminders date/time fields so values stay inside their fields.
+
+I added numeric/date-time keyboard mode for date and time input.
+
+I made Private reminder toggle check whether a PIN exists.
+
+I route users to Privacy PIN setup when they enable private reminders without a PIN.
+
+I preserved reminder form state while setting up PIN.
+
+I strengthened reminders tests around due reminders, snooze, dismiss, and private locked reminders.
+
+## 2026-05-26 — Notification Center Reminder Actions
+
+I replaced static Control Center notification rows with reminder-driven notifications.
+
+I added delete/dismiss controls to each notification row.
+
+I added tap-to-open notification detail modal.
+
+I added swipe left/right dismiss for notification rows.
+
+I kept notification dismissal separate from deleting reminder records.
+
+I kept private reminder content locked until PIN/privacy unlock.
+
+## 2026-05-26 — Final Notification Runtime Fix
+
+I fixed edited past reminders so future due times move them back to Upcoming.
+
+I made the due reminder modal global so it can appear on any screen.
+
+I fixed Control Center Notifications so due reminders appear there too.
+
+I made the Notifications section generic, with "No notifications" as empty state.
+
+I added scroll support for many notification rows.
+
+I kept notification dismissal separate from deleting reminder records.

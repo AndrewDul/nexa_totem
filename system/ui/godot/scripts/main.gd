@@ -121,6 +121,32 @@ var settings_dropdown_section := ""
 var settings_dropdown_key := ""
 var quick_shelf_scroll_y := 0.0
 var quick_shelf_status_text := ""
+var reminders_data := {}
+var reminders_due_data := {}
+var reminders_status_text := ""
+var reminders_selected_id := 0
+var reminders_selected_item := {}
+var reminders_mode := "list"
+var reminders_upcoming_scroll_y := 0.0
+var reminders_past_scroll_y := 0.0
+var reminders_poll_accumulator := 0.0
+var reminders_due_modal_open := false
+var reminders_form_title := ""
+var reminders_form_notes := ""
+var reminders_form_date := ""
+var reminders_form_time := ""
+var reminders_form_private := false
+var reminders_pending_due_id := 0
+var reminders_pending_private_after_pin := false
+var reminders_pending_private_form_mode := ""
+var notifications_data := []
+var notification_selected := {}
+var notification_detail_modal_open := false
+var notification_dismissed_ids := {}
+var notification_swipe_start_x := 0.0
+var notification_swipe_start_y := 0.0
+var notification_swipe_active_id := ""
+var notification_scroll_y := 0.0
 var study_current_page := "home"
 var study_scroll_y := 0.0
 var study_data := {}
@@ -176,6 +202,7 @@ var text_input_title := ""
 var text_input_value := ""
 var text_input_target := ""
 var text_input_context := {}
+var text_input_keyboard_mode := "text"
 var study_timer_data := {}
 var study_timer_poll_accumulator := 0.0
 
@@ -227,6 +254,8 @@ func _gui_input(event: InputEvent) -> void:
 		if event.pressed:
 			if _begin_slider_drag(event.position):
 				return
+			if _begin_notification_swipe(event.position):
+				return
 			if _begin_scroll_drag(event.position):
 				return
 			else:
@@ -234,6 +263,9 @@ func _gui_input(event: InputEvent) -> void:
 		else:
 			if slider_drag_active:
 				_finish_slider_drag()
+				return
+			if notification_swipe_active_id != "":
+				_finish_notification_swipe(event.position)
 				return
 			if scroll_drag_active:
 				scroll_drag_active = false
@@ -250,12 +282,17 @@ func _gui_input(event: InputEvent) -> void:
 		if event.pressed:
 			if _begin_slider_drag(event.position):
 				return
+			if _begin_notification_swipe(event.position):
+				return
 			if _begin_scroll_drag(event.position):
 				return
 			gesture.begin(event.position, elapsed)
 		else:
 			if slider_drag_active:
 				_finish_slider_drag()
+				return
+			if notification_swipe_active_id != "":
+				_finish_notification_swipe(event.position)
 				return
 			if scroll_drag_active:
 				scroll_drag_active = false
@@ -283,9 +320,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		elif event.keycode == KEY_ESCAPE:
 			_close_text_input()
 		elif event.keycode == KEY_SPACE:
-			text_input_value += " "
+			if text_input_keyboard_mode == "text":
+				text_input_value += " "
 		elif event.unicode > 0:
-			text_input_value += char(event.unicode)
+			var typed := char(event.unicode)
+			if _text_input_char_allowed(typed):
+				text_input_value += typed
 		_request_redraw()
 		return
 	if event.keycode == KEY_LEFT and nav.current_screen == "Face Home":
@@ -341,6 +381,8 @@ func _handle_gesture(action: String, position: Vector2) -> void:
 	_request_redraw()
 
 func _handle_tap(position: Vector2) -> void:
+	if reminders_due_modal_open and _handle_due_reminder_modal_tap(position):
+		return
 	if text_input_open:
 		_handle_text_input_tap(position)
 		return
@@ -371,6 +413,9 @@ func _handle_tap(position: Vector2) -> void:
 	if nav.current_screen == "Study":
 		_handle_study_tap(position)
 		return
+	if nav.current_screen == "Reminders":
+		_handle_reminders_tap(position)
+		return
 
 func _handle_menu_tap(position: Vector2) -> void:
 	for index in range(MENU_TILES.size()):
@@ -381,6 +426,8 @@ func _handle_menu_tap(position: Vector2) -> void:
 				_open_clock()
 			elif tile["title"] == "Study":
 				_open_study("home")
+			elif tile["title"] == "Reminders":
+				_open_reminders()
 			elif tile["title"] == "Diagnostics":
 				_open_diagnostics()
 			elif tile["title"] == "Settings":
@@ -403,6 +450,8 @@ func _handle_diagnostics_tap(position: Vector2) -> void:
 			return
 
 func _handle_control_center_tap(position: Vector2) -> void:
+	if _handle_notification_tap(position):
+		return
 	for index in range(6):
 		var rect: Rect2 = Rect2(44.0 + float(index % 3) * 184.0, 124.0 + float(int(index / 3)) * 76.0, 164.0, 62.0)
 		if not rect.has_point(position):
@@ -426,6 +475,86 @@ func _handle_control_center_tap(position: Vector2) -> void:
 			selected_control_detail = "remote"
 		elif index == 5:
 			_open_diagnostics()
+
+func _handle_notification_tap(position: Vector2) -> bool:
+	if nav.current_screen != "Notification Control Center":
+		return false
+	if notification_detail_modal_open:
+		if Rect2(104, 354, 120, 34).has_point(position):
+			notification_detail_modal_open = false
+			notification_selected = {}
+			_request_redraw()
+			return true
+		if Rect2(260, 354, 120, 34).has_point(position):
+			_dismiss_notification(notification_selected)
+			return true
+		if Rect2(416, 354, 120, 34).has_point(position):
+			_open_notification_source(notification_selected)
+			return true
+	if not _notification_scroll_rect().has_point(position):
+		return false
+	for index in range(notifications_data.size()):
+		var row := _notification_row_rect(index)
+		if not row.has_point(position):
+			continue
+		var notification: Dictionary = notifications_data[index] as Dictionary
+		if _notification_delete_rect(index).has_point(position):
+			_dismiss_notification(notification)
+			return true
+		notification_selected = notification
+		notification_detail_modal_open = true
+		_request_redraw()
+		return true
+	return false
+
+func _begin_notification_swipe(position: Vector2) -> bool:
+	if nav.current_screen != "Notification Control Center" or notification_detail_modal_open:
+		return false
+	if not _notification_scroll_rect().has_point(position):
+		return false
+	for index in range(notifications_data.size()):
+		if _notification_row_rect(index).has_point(position):
+			var notification: Dictionary = notifications_data[index] as Dictionary
+			notification_swipe_active_id = str(notification.get("id", ""))
+			notification_swipe_start_x = position.x
+			notification_swipe_start_y = position.y
+			return notification_swipe_active_id != ""
+	return false
+
+func _finish_notification_swipe(position: Vector2) -> void:
+	var active_id := notification_swipe_active_id
+	notification_swipe_active_id = ""
+	if active_id == "":
+		return
+	var dx := position.x - notification_swipe_start_x
+	var dy := position.y - notification_swipe_start_y
+	var notification := _notification_by_id(active_id)
+	if notification.is_empty():
+		return
+	if absf(dx) > 60.0 and absf(dx) > absf(dy):
+		_dismiss_notification(notification)
+		return
+	if absf(dy) > 60.0 and absf(dy) > absf(dx):
+		_apply_scroll("notifications", -dy)
+		return
+	for index in range(notifications_data.size()):
+		var row: Rect2 = _notification_row_rect(index)
+		if str((notifications_data[index] as Dictionary).get("id", "")) != active_id:
+			continue
+		if _notification_delete_rect(index).has_point(position):
+			_dismiss_notification(notification)
+		elif row.has_point(position) and absf(dx) < 18.0 and absf(dy) < 18.0:
+			notification_selected = notification
+			notification_detail_modal_open = true
+			_request_redraw()
+		return
+
+func _open_notification_source(notification: Dictionary) -> void:
+	if str(notification.get("type", "")) == "reminder":
+		reminders_selected_id = int(notification.get("source_id", 0))
+		notification_detail_modal_open = false
+		notification_selected = {}
+		_open_reminders()
 		_request_redraw()
 		return
 
@@ -521,6 +650,9 @@ func _activate_quick_shelf_tile(tile_name: String) -> void:
 	elif tile_name == "Study Stats":
 		quick_shelf_status_text = "Opening Study Stats"
 		_open_study("stats")
+	elif tile_name == "Reminders":
+		quick_shelf_status_text = "Opening Reminders"
+		_open_reminders()
 	elif tile_name == "Quiet Mode":
 		quiet_mode_local = not quiet_mode_local
 		control_center_data["quiet_mode"] = quiet_mode_local
@@ -589,6 +721,184 @@ func _handle_study_tap(position: Vector2) -> void:
 		_handle_study_languages_tap(position)
 	elif study_current_page == "settings":
 		_handle_study_settings_tap(position)
+
+func _handle_reminders_tap(position: Vector2) -> void:
+	if reminders_due_modal_open:
+		if Rect2(164, 324, 96, 34).has_point(position):
+			_dismiss_pending_due_notification()
+			return
+			if Rect2(272, 324, 112, 34).has_point(position):
+				api.request_post("/api/reminders/snooze", {"id": reminders_pending_due_id, "minutes": 5})
+				_local_remove_notification("reminder:" + str(reminders_pending_due_id), false)
+				reminders_due_modal_open = false
+				return
+		if Rect2(396, 324, 96, 34).has_point(position):
+			reminders_due_modal_open = false
+			reminders_selected_id = reminders_pending_due_id
+			_open_reminders()
+			return
+	if Rect2(520, 22, 92, 34).has_point(position):
+		_go_home()
+		return
+	if reminders_mode == "delete_confirm":
+		if Rect2(78, 354, 210, 42).has_point(position):
+			reminders_mode = "list"
+		elif Rect2(352, 354, 210, 42).has_point(position):
+			api.request_post("/api/reminders/delete", {"id": reminders_selected_id, "confirm_text": "DELETE_REMINDER"})
+			reminders_selected_id = 0
+			reminders_selected_item = {}
+		_request_redraw()
+		return
+	if reminders_mode == "add" or reminders_mode == "edit":
+		_handle_reminders_form_tap(position)
+		return
+	if Rect2(44, 88, 160, 34).has_point(position):
+		_reminders_open_add_form()
+	elif Rect2(220, 88, 160, 34).has_point(position):
+		if reminders_selected_id <= 0:
+			reminders_status_text = "Select one reminder first."
+		else:
+			_reminders_open_edit_form()
+	elif Rect2(396, 88, 160, 34).has_point(position):
+		if reminders_selected_id <= 0:
+			reminders_status_text = "Select one reminder first."
+		else:
+			reminders_mode = "delete_confirm"
+	for index in range(_reminders_list_count("upcoming")):
+		var rect := _reminder_row_rect("upcoming", index)
+		if rect.has_point(position):
+			_select_reminder("upcoming", index)
+			return
+	for index in range(_reminders_list_count("past")):
+		var rect := _reminder_row_rect("past", index)
+		if rect.has_point(position):
+			_select_reminder("past", index)
+			return
+	_request_redraw()
+
+func _handle_reminders_form_tap(position: Vector2) -> void:
+	if Rect2(44, 136, 552, 34).has_point(position):
+		_open_text_input("Reminder text", reminders_form_title, "reminder_title", {})
+	elif Rect2(44, 178, 552, 34).has_point(position):
+		_open_text_input("Notes", reminders_form_notes, "reminder_notes", {})
+	elif Rect2(44, 220, 260, 34).has_point(position):
+		_open_text_input("Date YYYY-MM-DD", reminders_form_date, "reminder_date", {"keyboard_mode": "datetime"})
+	elif Rect2(324, 220, 170, 34).has_point(position):
+		_open_text_input("Time HH:MM", reminders_form_time, "reminder_time", {"keyboard_mode": "datetime"})
+	elif Rect2(510, 220, 86, 34).has_point(position):
+		_reminders_toggle_private()
+	elif Rect2(44, 274, 76, 30).has_point(position):
+		_reminders_apply_relative_minutes(5)
+	elif Rect2(130, 274, 76, 30).has_point(position):
+		_reminders_apply_relative_minutes(15)
+	elif Rect2(216, 274, 76, 30).has_point(position):
+		_reminders_apply_relative_minutes(30)
+	elif Rect2(302, 274, 76, 30).has_point(position):
+		_reminders_apply_relative_minutes(60)
+	elif Rect2(388, 274, 92, 30).has_point(position):
+		_reminders_apply_relative_days(1)
+	elif Rect2(490, 274, 106, 30).has_point(position):
+		_reminders_apply_relative_days(7)
+	elif Rect2(44, 390, 170, 34).has_point(position):
+		_reminders_save_form()
+	elif Rect2(232, 390, 170, 34).has_point(position):
+		reminders_mode = "list"
+
+func _reminders_open_add_form() -> void:
+	var now := Time.get_datetime_dict_from_system()
+	reminders_mode = "add"
+	reminders_form_title = ""
+	reminders_form_notes = ""
+	reminders_form_date = "%04d-%02d-%02d" % [now.year, now.month, now.day]
+	reminders_form_time = "%02d:%02d" % [now.hour, now.minute]
+	reminders_form_private = false
+	api.request_get("/api/privacy/status")
+
+func _reminders_open_edit_form() -> void:
+	reminders_mode = "edit"
+	reminders_form_title = str(reminders_selected_item.get("title", ""))
+	reminders_form_notes = str(reminders_selected_item.get("notes", ""))
+	var due_text := str(reminders_selected_item.get("due_at", ""))
+	reminders_form_date = due_text.substr(0, 10)
+	reminders_form_time = due_text.substr(11, 5)
+	reminders_form_private = bool(reminders_selected_item.get("is_private", false))
+	api.request_get("/api/privacy/status")
+
+func _reminders_toggle_private() -> void:
+	if bool(privacy_status_data.get("pin_enabled", false)):
+		reminders_form_private = not reminders_form_private
+		return
+	reminders_pending_private_after_pin = true
+	reminders_pending_private_form_mode = reminders_mode
+	reminders_status_text = "Set a 4-digit PIN to use private reminders."
+	_open_privacy_pin_setup_from_reminders()
+
+func _open_privacy_pin_setup_from_reminders() -> void:
+	nav.previous_screen = "Reminders"
+	nav.current_screen = "Settings"
+	transition_active = false
+	settings_current_page = "privacy"
+	pin_mode = "set"
+	pin_input = ""
+	settings_status_text = "Set a 4-digit PIN to use private reminders."
+	api.request_get("/api/privacy/status")
+	_request_redraw()
+
+func _reminders_apply_relative_minutes(minutes: int) -> void:
+	var unix := Time.get_unix_time_from_system() + minutes * 60
+	var due := Time.get_datetime_dict_from_unix_time(unix)
+	reminders_form_date = "%04d-%02d-%02d" % [due.year, due.month, due.day]
+	reminders_form_time = "%02d:%02d" % [due.hour, due.minute]
+
+func _reminders_apply_relative_days(days: int) -> void:
+	var unix := Time.get_unix_time_from_system() + days * 86400
+	var due := Time.get_datetime_dict_from_unix_time(unix)
+	reminders_form_date = "%04d-%02d-%02d" % [due.year, due.month, due.day]
+	reminders_form_time = "%02d:%02d" % [due.hour, due.minute]
+
+func _reminders_due_at_text() -> String:
+	return reminders_form_date + "T" + reminders_form_time + ":00"
+
+func _reminders_save_form() -> void:
+	if reminders_form_title.strip_edges() == "":
+		reminders_status_text = "Reminder text is required."
+		return
+	if not _reminders_date_valid(reminders_form_date) or not _reminders_time_valid(reminders_form_time):
+		reminders_status_text = "Use YYYY-MM-DD and HH:MM."
+		return
+	var payload := {"title": reminders_form_title, "notes": reminders_form_notes, "due_at": _reminders_due_at_text(), "is_private": reminders_form_private}
+	if reminders_mode == "edit":
+		payload["id"] = reminders_selected_id
+		api.request_post("/api/reminders/update", payload)
+	else:
+		api.request_post("/api/reminders/create", payload)
+
+func _reminders_date_valid(value: String) -> bool:
+	if value.length() != 10:
+		return false
+	if value.substr(4, 1) != "-" or value.substr(7, 1) != "-":
+		return false
+	for index in [0, 1, 2, 3, 5, 6, 8, 9]:
+		if "0123456789".find(value.substr(index, 1)) < 0:
+			return false
+	return true
+
+func _reminders_time_valid(value: String) -> bool:
+	if value.length() != 5 or value.substr(2, 1) != ":":
+		return false
+	for index in [0, 1, 3, 4]:
+		if "0123456789".find(value.substr(index, 1)) < 0:
+			return false
+	var hour := int(value.substr(0, 2))
+	var minute := int(value.substr(3, 2))
+	return hour >= 0 and hour <= 23 and minute >= 0 and minute <= 59
+
+func _select_reminder(kind: String, index: int) -> void:
+	var rows_raw = reminders_data.get(kind, [])
+	if rows_raw is Array and index < rows_raw.size():
+		reminders_selected_item = rows_raw[index] as Dictionary
+		reminders_selected_id = int(reminders_selected_item.get("id", 0))
+	_request_redraw()
 
 func _study_page_id(title: String) -> String:
 	return title.to_lower().replace(" ", "_")
@@ -1064,6 +1374,7 @@ func _open_text_input(title: String, value: String, target: String, context: Dic
 	text_input_value = value
 	text_input_target = target
 	text_input_context = context
+	text_input_keyboard_mode = str(context.get("keyboard_mode", "text"))
 	_request_redraw()
 
 func _close_text_input() -> void:
@@ -1072,6 +1383,21 @@ func _close_text_input() -> void:
 	text_input_value = ""
 	text_input_target = ""
 	text_input_context = {}
+	text_input_keyboard_mode = "text"
+
+func _text_input_keys() -> String:
+	if text_input_keyboard_mode == "datetime":
+		if text_input_target == "reminder_time":
+			return "0123456789:"
+		return "0123456789-"
+	if text_input_keyboard_mode == "number":
+		return "0123456789"
+	return "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?!-/:"
+
+func _text_input_char_allowed(value: String) -> bool:
+	if text_input_keyboard_mode == "text":
+		return true
+	return _text_input_keys().find(value) >= 0
 
 func _handle_text_input_tap(position: Vector2) -> void:
 	if Rect2(412, 386, 82, 34).has_point(position):
@@ -1081,7 +1407,7 @@ func _handle_text_input_tap(position: Vector2) -> void:
 		_close_text_input()
 		_request_redraw()
 		return
-	if Rect2(40, 386, 96, 34).has_point(position):
+	if Rect2(40, 386, 96, 34).has_point(position) and text_input_keyboard_mode == "text":
 		text_input_value += " "
 		_request_redraw()
 		return
@@ -1094,7 +1420,7 @@ func _handle_text_input_tap(position: Vector2) -> void:
 		text_input_value = ""
 		_request_redraw()
 		return
-	var keys := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?!-/:"
+	var keys := _text_input_keys()
 	for index in range(keys.length()):
 		var rect: Rect2 = _text_key_rect(index)
 		if rect.has_point(position):
@@ -1152,6 +1478,14 @@ func _commit_text_input() -> void:
 		_open_text_input("Meaning", "", "study_language_meaning", {})
 	elif target == "study_language_meaning":
 		api.request_post("/api/study/languages/words/create", {"list_id": study_selected_language_list_id, "word": study_pending_language_word, "pronunciation": study_pending_language_pronunciation, "meaning": value})
+	elif target == "reminder_title":
+		reminders_form_title = value
+	elif target == "reminder_notes":
+		reminders_form_notes = value
+	elif target == "reminder_date":
+		reminders_form_date = value
+	elif target == "reminder_time":
+		reminders_form_time = value
 	_request_redraw()
 
 func _settings_update(section: String, key: String, value) -> void:
@@ -1483,6 +1817,11 @@ func _begin_scroll_drag(position: Vector2) -> bool:
 		scroll_drag_area = "diagnostics"
 		scroll_drag_last_y = position.y
 		return true
+	if nav.current_screen == "Notification Control Center" and _notification_scrollbar_hit_rect().has_point(position) and _notification_max_scroll() > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "notifications"
+		scroll_drag_last_y = position.y
+		return true
 	if nav.current_screen == "Notification Control Center" and _control_scroll_rect().has_point(position) and _control_center_max_scroll() > 0.0:
 		scroll_drag_active = true
 		scroll_drag_area = "control"
@@ -1507,6 +1846,16 @@ func _begin_scroll_drag(position: Vector2) -> bool:
 		scroll_drag_area = "study_segments"
 		scroll_drag_last_y = position.y
 		return true
+	if nav.current_screen == "Reminders" and _reminders_upcoming_scrollbar_hit_rect().has_point(position) and _reminders_max_scroll("upcoming") > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "reminders_upcoming"
+		scroll_drag_last_y = position.y
+		return true
+	if nav.current_screen == "Reminders" and _reminders_past_scrollbar_hit_rect().has_point(position) and _reminders_max_scroll("past") > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "reminders_past"
+		scroll_drag_last_y = position.y
+		return true
 	return false
 
 func _update_scroll_drag(position: Vector2) -> void:
@@ -1517,6 +1866,8 @@ func _update_scroll_drag(position: Vector2) -> void:
 func _handle_scroll_wheel(position: Vector2, amount: float) -> void:
 	if nav.current_screen == "Diagnostics" and _diagnostics_scroll_rect().has_point(position):
 		_apply_scroll("diagnostics", amount)
+	elif nav.current_screen == "Notification Control Center" and _notification_scroll_rect().has_point(position):
+		_apply_scroll("notifications", amount)
 	elif nav.current_screen == "Notification Control Center" and _control_scroll_rect().has_point(position):
 		_apply_scroll("control", amount)
 	elif nav.current_screen == "Settings" and _settings_scroll_rect().has_point(position):
@@ -1525,6 +1876,10 @@ func _handle_scroll_wheel(position: Vector2, amount: float) -> void:
 		_apply_scroll("quick_shelf", amount)
 	elif nav.current_screen == "Study" and study_current_page == "smart_study" and _study_segment_scroll_rect().has_point(position):
 		_apply_scroll("study_segments", amount)
+	elif nav.current_screen == "Reminders" and _reminders_upcoming_scroll_rect().has_point(position):
+		_apply_scroll("reminders_upcoming", amount)
+	elif nav.current_screen == "Reminders" and _reminders_past_scroll_rect().has_point(position):
+		_apply_scroll("reminders_past", amount)
 
 func _apply_scroll(area: String, amount: float) -> void:
 	if area == "diagnostics":
@@ -1532,6 +1887,9 @@ func _apply_scroll(area: String, amount: float) -> void:
 		_request_redraw()
 	elif area == "control":
 		control_center_scroll_y = clampf(control_center_scroll_y + amount, 0.0, _control_center_max_scroll())
+		_request_redraw()
+	elif area == "notifications":
+		notification_scroll_y = clampf(notification_scroll_y + amount, 0.0, _notification_max_scroll())
 		_request_redraw()
 	elif area == "settings":
 		settings_scroll_y = clampf(settings_scroll_y + amount, 0.0, _settings_max_scroll())
@@ -1542,12 +1900,25 @@ func _apply_scroll(area: String, amount: float) -> void:
 	elif area == "study_segments":
 		study_segment_scroll_y = clampf(study_segment_scroll_y + amount, 0.0, _study_segment_max_scroll())
 		_request_redraw()
+	elif area == "reminders_upcoming":
+		reminders_upcoming_scroll_y = clampf(reminders_upcoming_scroll_y + amount, 0.0, _reminders_max_scroll("upcoming"))
+		_request_redraw()
+	elif area == "reminders_past":
+		reminders_past_scroll_y = clampf(reminders_past_scroll_y + amount, 0.0, _reminders_max_scroll("past"))
+		_request_redraw()
 
 func _diagnostics_scroll_rect() -> Rect2:
 	return Rect2(24, 138, 592, 318)
 
 func _control_scroll_rect() -> Rect2:
 	return Rect2(36, 286, 568, 166)
+
+func _notification_scroll_rect() -> Rect2:
+	return Rect2(44, 318, 552, 130)
+
+func _notification_scrollbar_hit_rect() -> Rect2:
+	var rect := _notification_scroll_rect()
+	return Rect2(rect.position.x + rect.size.x - 22.0, rect.position.y, 22.0, rect.size.y)
 
 func _settings_scroll_rect() -> Rect2:
 	return Rect2(24, 84, 592, 372)
@@ -1572,6 +1943,12 @@ func _diagnostics_max_scroll() -> float:
 
 func _control_center_max_scroll() -> float:
 	return maxf(0.0, _control_center_content_height() - _control_scroll_rect().size.y)
+
+func _notification_content_height() -> float:
+	return maxf(_notification_scroll_rect().size.y, float(notifications_data.size()) * 48.0 + 8.0)
+
+func _notification_max_scroll() -> float:
+	return maxf(0.0, _notification_content_height() - _notification_scroll_rect().size.y)
 
 func _settings_max_scroll() -> float:
 	return maxf(0.0, _settings_content_height() - _settings_scroll_rect().size.y)
@@ -1624,6 +2001,36 @@ func _quick_shelf_content_height() -> float:
 func _study_segment_content_height() -> float:
 	return maxf(_study_segment_scroll_rect().size.y, float(study_segments.size()) * 30.0 + 8.0)
 
+func _reminders_upcoming_scroll_rect() -> Rect2:
+	return Rect2(44, 206, 262, 218)
+
+func _reminders_past_scroll_rect() -> Rect2:
+	return Rect2(334, 206, 262, 218)
+
+func _reminders_upcoming_scrollbar_hit_rect() -> Rect2:
+	return Rect2(294, 206, 18, 218)
+
+func _reminders_past_scrollbar_hit_rect() -> Rect2:
+	return Rect2(584, 206, 18, 218)
+
+func _reminders_content_height(kind: String) -> float:
+	return maxf(_reminders_upcoming_scroll_rect().size.y, float(_reminders_list_count(kind)) * 42.0 + 8.0)
+
+func _reminders_max_scroll(kind: String) -> float:
+	var view := _reminders_upcoming_scroll_rect() if kind == "upcoming" else _reminders_past_scroll_rect()
+	return maxf(0.0, _reminders_content_height(kind) - view.size.y)
+
+func _reminders_list_count(kind: String) -> int:
+	var raw = reminders_data.get(kind, [])
+	if raw is Array:
+		return raw.size()
+	return 0
+
+func _reminder_row_rect(kind: String, index: int) -> Rect2:
+	var x := 48.0 if kind == "upcoming" else 338.0
+	var scroll := reminders_upcoming_scroll_y if kind == "upcoming" else reminders_past_scroll_y
+	return Rect2(x, 230.0 + float(index) * 42.0 - scroll, 242.0, 34.0)
+
 func _open_menu() -> void:
 	_navigate_to("Menu", "menu_open")
 
@@ -1648,6 +2055,15 @@ func _open_study(page: String = "home") -> void:
 	study_current_page = page
 	study_scroll_y = 0.0
 	_request_study_page_data()
+	_request_redraw()
+
+func _open_reminders() -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "Reminders"
+	transition_active = false
+	reminders_mode = "list"
+	api.request_get("/api/reminders/list")
+	api.request_get("/api/reminders/due")
 	_request_redraw()
 
 func _open_diagnostics() -> void:
@@ -1693,6 +2109,8 @@ func _go_home() -> void:
 		direction = "quick_close"
 	elif nav.current_screen == "Study":
 		study_current_page = "home"
+	elif nav.current_screen == "Reminders":
+		reminders_mode = "list"
 	if direction == "diagnostics":
 		nav.previous_screen = nav.current_screen
 		nav.current_screen = "Face Home"
@@ -1723,7 +2141,13 @@ func _update_api_polling(delta: float) -> void:
 		return
 	api_poll_accumulator += delta
 	study_timer_poll_accumulator += delta
+	reminders_poll_accumulator += delta
 	if transition_active:
+		return
+	var reminders_interval := 1.0 if reminders_due_modal_open else 5.0
+	if reminders_poll_accumulator >= reminders_interval:
+		reminders_poll_accumulator = 0.0
+		api.request_get("/api/reminders/due")
 		return
 	if (nav.current_screen == "Face Home" or nav.current_screen == "Study") and study_timer_poll_accumulator >= 1.0:
 		study_timer_poll_accumulator = 0.0
@@ -1812,6 +2236,8 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 			sound_percent = int(payload.get("sound_percent", sound_percent))
 		quiet_mode_local = bool(payload.get("quiet_mode", quiet_mode_local))
 		remote_network_local = str(payload.get("remote_network_state", remote_network_local))
+	elif endpoint.begins_with("/api/reminders/"):
+		_handle_reminders_api(endpoint, payload)
 	elif endpoint == "/api/overview":
 		overview_live_data = payload
 		active_tab_data = payload
@@ -1931,6 +2357,14 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 			settings_data = settings_raw
 			settings_status_text = "Saved"
 		if endpoint == "/api/privacy/pin/set":
+			if reminders_pending_private_after_pin:
+				reminders_form_private = true
+				reminders_pending_private_after_pin = false
+				reminders_status_text = "Private reminder enabled."
+				settings_status_text = "Private reminder enabled."
+				nav.current_screen = "Reminders"
+				reminders_mode = reminders_pending_private_form_mode if reminders_pending_private_form_mode != "" else "add"
+				reminders_pending_private_form_mode = ""
 			api.request_get("/api/privacy/status")
 	elif endpoint == "/api/privacy/status" or endpoint == "/api/privacy/pin/verify" or endpoint == "/api/privacy/lock":
 		privacy_status_data = payload
@@ -1962,6 +2396,161 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 			camera_preview_status = "Off"
 	_request_redraw()
 
+func _handle_reminders_api(endpoint: String, payload: Dictionary) -> void:
+	reminders_status_text = str(payload.get("message", payload.get("status", "ok")))
+	if endpoint == "/api/reminders/list" or endpoint == "/api/reminders/overview":
+		reminders_data = payload
+		_reminders_restore_selected_from_data()
+	elif endpoint == "/api/reminders/due":
+		reminders_due_data = payload
+		var due_raw = payload.get("due", [])
+		var due_count := int(payload.get("count", 0))
+		reminders_due_modal_open = due_count > 0 and due_raw is Array and not due_raw.is_empty()
+		_rebuild_notifications_from_reminders()
+		if notifications_data.is_empty():
+			reminders_due_modal_open = false
+		if reminders_due_modal_open:
+			var first: Dictionary = _first_due_notification_item()
+			reminders_pending_due_id = int(first.get("id", 0))
+			if str(first.get("triggered_at", "")) == "":
+				api.request_post("/api/reminders/mark-triggered", {"id": reminders_pending_due_id})
+	elif endpoint in ["/api/reminders/create", "/api/reminders/update", "/api/reminders/delete", "/api/reminders/dismiss", "/api/reminders/snooze", "/api/reminders/mark-triggered"]:
+		if endpoint == "/api/reminders/dismiss" or endpoint == "/api/reminders/snooze":
+			reminders_due_modal_open = false
+			_rebuild_notifications_from_reminders()
+		reminders_mode = "list"
+		api.request_get("/api/reminders/list")
+		api.request_get("/api/reminders/due")
+	_request_redraw()
+
+func _first_due_notification_item() -> Dictionary:
+	for raw_notification in notifications_data:
+		var notification: Dictionary = raw_notification as Dictionary
+		if str(notification.get("type", "")) == "reminder":
+			var source_raw = notification.get("source_item", {})
+			if source_raw is Dictionary:
+				return source_raw as Dictionary
+			return {}
+	var due_raw = reminders_due_data.get("due", [])
+	if due_raw is Array and not due_raw.is_empty():
+		return due_raw[0] as Dictionary
+	return {}
+
+func _rebuild_notifications_from_reminders() -> void:
+	var next_notifications: Array = []
+	var due_raw = reminders_due_data.get("due", [])
+	if due_raw is Array:
+		for raw_item in due_raw:
+			var item: Dictionary = raw_item as Dictionary
+			var source_id := int(item.get("id", 0))
+			if source_id <= 0:
+				continue
+			var notification_id := "reminder:" + str(source_id)
+			if bool(notification_dismissed_ids.get(notification_id, false)):
+				continue
+			var locked := bool(item.get("requires_pin", false))
+			var title := "Private reminder locked" if locked else "Reminder"
+			var body := "Private reminder locked" if locked else str(item.get("title", "Reminder"))
+			var due_text := _format_due_label(str(item.get("due_at", "")))
+			var subtitle := "Enter PIN to view" if locked else ("Due " + due_text)
+			next_notifications.append({
+				"id": notification_id,
+				"type": "reminder",
+				"title": title,
+				"body": body,
+				"subtitle": subtitle,
+				"requires_pin": locked,
+				"source_id": source_id,
+				"source_item": item,
+				"created_at": str(item.get("triggered_at", item.get("due_at", ""))),
+				"dismissed_local": false
+			})
+	notifications_data = next_notifications
+	notification_scroll_y = clampf(notification_scroll_y, 0.0, _notification_max_scroll())
+	if notification_detail_modal_open and not notification_selected.is_empty():
+		var selected_id := str(notification_selected.get("id", ""))
+		if _notification_by_id(selected_id).is_empty():
+			notification_detail_modal_open = false
+			notification_selected = {}
+	if notifications_data.is_empty():
+		reminders_pending_due_id = 0
+
+func _format_due_label(value: String) -> String:
+	if value.length() >= 16:
+		return value.substr(0, 10) + " " + value.substr(11, 5)
+	return value
+
+func _notification_by_id(notification_id: String) -> Dictionary:
+	for raw_notification in notifications_data:
+		var notification: Dictionary = raw_notification as Dictionary
+		if str(notification.get("id", "")) == notification_id:
+			return notification
+	return {}
+
+func _local_remove_notification(notification_id: String, remember_dismissed: bool = true) -> void:
+	if remember_dismissed:
+		notification_dismissed_ids[notification_id] = true
+	for index in range(notifications_data.size() - 1, -1, -1):
+		var item: Dictionary = notifications_data[index] as Dictionary
+		if str(item.get("id", "")) == notification_id:
+			notifications_data.remove_at(index)
+	if str(notification_selected.get("id", "")) == notification_id:
+		notification_selected = {}
+		notification_detail_modal_open = false
+	if notification_id == "reminder:" + str(reminders_pending_due_id):
+		reminders_due_modal_open = false
+		reminders_pending_due_id = 0
+	_request_redraw()
+
+func _dismiss_notification(notification: Dictionary) -> void:
+	var notification_id := str(notification.get("id", ""))
+	if notification_id == "":
+		return
+	_local_remove_notification(notification_id)
+	if str(notification.get("type", "")) == "reminder":
+		api.request_post("/api/reminders/dismiss", {"id": int(notification.get("source_id", 0))})
+
+func _dismiss_pending_due_notification() -> void:
+	var notification_id := "reminder:" + str(reminders_pending_due_id)
+	var notification := _notification_by_id(notification_id)
+	if notification.is_empty():
+		_local_remove_notification(notification_id)
+		api.request_post("/api/reminders/dismiss", {"id": reminders_pending_due_id})
+	else:
+		_dismiss_notification(notification)
+
+func _handle_due_reminder_modal_tap(position: Vector2) -> bool:
+	if not reminders_due_modal_open:
+		return false
+	if Rect2(164, 324, 96, 34).has_point(position):
+		_dismiss_pending_due_notification()
+		return true
+	if Rect2(272, 324, 112, 34).has_point(position):
+		api.request_post("/api/reminders/snooze", {"id": reminders_pending_due_id, "minutes": 5})
+		_local_remove_notification("reminder:" + str(reminders_pending_due_id), false)
+		reminders_due_modal_open = false
+		return true
+	if Rect2(396, 324, 96, 34).has_point(position):
+		reminders_due_modal_open = false
+		reminders_selected_id = reminders_pending_due_id
+		_open_reminders()
+		return true
+	return false
+
+func _reminders_restore_selected_from_data() -> void:
+	if reminders_selected_id <= 0:
+		return
+	for kind in ["upcoming", "past"]:
+		var rows_raw = reminders_data.get(kind, [])
+		if rows_raw is Array:
+			for index in range(rows_raw.size()):
+				var item: Dictionary = rows_raw[index] as Dictionary
+				if int(item.get("id", 0)) == reminders_selected_id:
+					reminders_selected_item = item
+					return
+	reminders_selected_id = 0
+	reminders_selected_item = {}
+
 func _on_api_offline(endpoint: String) -> void:
 	api_online = false
 	api_status_text = "API offline"
@@ -1987,6 +2576,11 @@ func _draw() -> void:
 		_draw_transition()
 	else:
 		_draw_screen(nav.current_screen, Vector2.ZERO)
+	_draw_global_overlays()
+
+func _draw_global_overlays() -> void:
+	if reminders_due_modal_open:
+		_draw_due_reminder_modal()
 
 func _draw_transition() -> void:
 	var t: float = _ease_transition(transition_progress)
@@ -2043,6 +2637,8 @@ func _draw_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_settings()
 		"Study":
 			_draw_study()
+		"Reminders":
+			_draw_reminders()
 		_:
 			_draw_placeholder(nav.placeholder_title if nav.placeholder_title != "" else screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -2058,6 +2654,8 @@ func _draw_overlay_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_control_center()
 		"Quick Shelf":
 			_draw_quick_shelf()
+		"Reminders":
+			_draw_reminders()
 		_:
 			_draw_placeholder(screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -2155,11 +2753,34 @@ func _rect_visible(rect: Rect2, view_rect: Rect2) -> bool:
 func _draw_face_home() -> void:
 	face.draw_face(self, Vector2(WIDTH, HEIGHT), elapsed, _settings_color(str(_settings_value("appearance", "eye_color", "Blue")), Color(0.18, 0.58, 1.0, 1.0)), _settings_color(str(_settings_value("appearance", "mouth_color", "Blue")), Color(0.18, 0.58, 1.0, 0.95)))
 	_draw_text(Time.get_datetime_string_from_system(false, true).substr(11, 5), Vector2(538, 34), 17, Color(0.48, 0.62, 0.82, 0.82))
+	_draw_reminder_top_badge()
 	_draw_study_timer_overlay()
 	if elapsed < nav.status_bubble_until:
 		var bubble: Rect2 = Rect2(198, 350, 244, 58)
 		_draw_card(bubble, Color(0.075, 0.085, 0.105, 0.96), 28.0, false)
 		_draw_text("Status OK", bubble.position + Vector2(28, 37), 20, ThemeScript.TEXT)
+
+func _draw_reminder_top_badge() -> void:
+	var count := notifications_data.size()
+	if count <= 0:
+		return
+	_draw_pill(Rect2(466, 30, 54, 24), Color(0.16, 0.10, 0.05, 0.94), true)
+	_draw_centered_text("!" + str(count), 493.0, 47.0, 11, ThemeScript.TEXT)
+
+func _draw_due_reminder_modal() -> void:
+	if notifications_data.is_empty():
+		return
+	var notification: Dictionary = notifications_data[0] as Dictionary
+	var rect := Rect2(128, 188, 384, 190)
+	_draw_rounded_rect(rect, Color(0.045, 0.052, 0.064, 0.98), 22.0)
+	_draw_rounded_outline(rect, Color(1.0, 1.0, 1.0, 0.10), 22.0)
+	_draw_centered_text("Reminder", 320.0, 224.0, 18, ThemeScript.TEXT)
+	var title := str(notification.get("body", "Reminder"))
+	_draw_centered_text(_short_text(title, 38), 320.0, 258.0, 15, ThemeScript.TEXT)
+	_draw_centered_text(_short_text(str(notification.get("subtitle", "")), 38), 320.0, 282.0, 11, ThemeScript.TEXT_MUTED)
+	_draw_button(Rect2(164, 324, 96, 34), "Dismiss", false)
+	_draw_button(Rect2(272, 324, 112, 34), "Snooze +5m", false)
+	_draw_button(Rect2(396, 324, 96, 34), "Open", false)
 
 func _draw_study_timer_overlay() -> void:
 	if not bool(study_timer_data.get("active", false)):
@@ -2301,13 +2922,10 @@ func _draw_control_center() -> void:
 		elif item["title"] == "Sound":
 			_draw_slider_bar(Rect2(rect.position.x + 14.0, rect.position.y + 50.0, 132.0, 5.0), sound_percent, active)
 	_draw_control_detail()
-	_draw_text("Notifications", Vector2(46, 292), 20, ThemeScript.TEXT)
+	_draw_notifications_section()
+	if notification_detail_modal_open:
+		_draw_notification_detail_modal()
 	var control_view: Rect2 = _control_scroll_rect()
-	var y_offset: float = control_center_scroll_y
-	_draw_notification(Rect2(44, 310 - y_offset, 552, 38), "Reminder", "Study plan", control_view)
-	_draw_notification(Rect2(44, 354 - y_offset, 552, 38), "System", "UI running", control_view)
-	_draw_notification(Rect2(44, 398 - y_offset, 552, 38), "Private", "Locked", control_view)
-	_draw_notification(Rect2(44, 442 - y_offset, 552, 38), "System", "No saved report", control_view)
 	_draw_scrollbar(control_view, control_center_scroll_y, _control_center_content_height())
 
 func _draw_control_center_safe() -> void:
@@ -2343,9 +2961,9 @@ func _draw_control_center_safe() -> void:
 			_draw_wifi_detail_safe()
 		else:
 			_draw_control_detail_safe()
-			_draw_text("Notifications", Vector2(46, 300), 18, ThemeScript.TEXT)
-			_draw_notification_safe(Rect2(44, 318, 552, 40), "Reminder", "Study plan")
-			_draw_notification_safe(Rect2(44, 366, 552, 40), "System", "UI running")
+			_draw_notifications_section_safe()
+	if notification_detail_modal_open:
+		_draw_notification_detail_modal()
 
 func _draw_control_detail_safe() -> void:
 	if selected_control_detail == "":
@@ -2393,10 +3011,83 @@ func _draw_wifi_detail_safe() -> void:
 		_draw_text(available_label, rect.position + Vector2(282, 93 + index * 16), 10, ThemeScript.TEXT_MUTED)
 	_draw_text("Action: Connect planned · dry-run", rect.position + Vector2(14, 143), 10, ThemeScript.TEXT_DIM)
 
+func _draw_notifications_section_safe() -> void:
+	_draw_text("Notifications", Vector2(46, 300), 18, ThemeScript.TEXT)
+	var list_rect := _notification_scroll_rect()
+	_draw_rounded_rect(list_rect, Color(0.060, 0.068, 0.082, 0.96), 12.0)
+	if notifications_data.is_empty():
+		_draw_centered_text("No notifications", list_rect.position.x + list_rect.size.x * 0.5, list_rect.position.y + list_rect.size.y * 0.5 + 5.0, 13, ThemeScript.TEXT_MUTED)
+		return
+	for index in range(notifications_data.size()):
+		var rect := _notification_row_rect(index)
+		if _notification_row_visible(rect):
+			_draw_notification_row(rect, notifications_data[index] as Dictionary, index)
+	_draw_scrollbar(list_rect, notification_scroll_y, _notification_content_height())
+
+func _draw_notifications_section() -> void:
+	_draw_text("Notifications", Vector2(46, 292), 20, ThemeScript.TEXT)
+	var list_rect := _notification_scroll_rect()
+	_draw_rounded_rect(list_rect, Color(0.060, 0.068, 0.082, 0.96), 12.0)
+	if notifications_data.is_empty():
+		_draw_centered_text("No notifications", list_rect.position.x + list_rect.size.x * 0.5, list_rect.position.y + list_rect.size.y * 0.5 + 5.0, 13, ThemeScript.TEXT_MUTED)
+		return
+	for index in range(notifications_data.size()):
+		var rect := _notification_row_rect(index)
+		if _notification_row_visible(rect):
+			_draw_notification_row(rect, notifications_data[index] as Dictionary, index)
+	_draw_scrollbar(list_rect, notification_scroll_y, _notification_content_height())
+
+func _notification_row_rect(index: int) -> Rect2:
+	return Rect2(52, 326 + float(index) * 48.0 - notification_scroll_y, 536, 40)
+
+func _notification_row_visible(rect: Rect2) -> bool:
+	var view_rect := _notification_scroll_rect()
+	return rect.position.y >= view_rect.position.y + 4.0 and rect.position.y + rect.size.y <= view_rect.position.y + view_rect.size.y - 4.0
+
+func _notification_delete_rect(index: int) -> Rect2:
+	var row := _notification_row_rect(index)
+	return Rect2(row.position.x + row.size.x - 42.0, row.position.y + 8.0, 28.0, 24.0)
+
+func _draw_notification_row(rect: Rect2, notification: Dictionary, index: int) -> void:
+	_draw_rounded_rect(rect, Color(0.078, 0.087, 0.104, 1.0), 16.0)
+	_draw_rounded_outline(rect, Color(1.0, 1.0, 1.0, 0.06), 16.0)
+	var accent := ThemeScript.WARNING if bool(notification.get("requires_pin", false)) else ThemeScript.BLUE
+	_draw_pill(Rect2(rect.position.x + 12.0, rect.position.y + 8.0, 76.0, 22.0), Color(0.08, 0.12, 0.18, 0.92), false)
+	_draw_text(_short_text(str(notification.get("title", "Reminder")), 12), rect.position + Vector2(24, 25), 10, accent)
+	_draw_text(_short_text(str(notification.get("body", "")), 32), rect.position + Vector2(104, 20), 12, ThemeScript.TEXT)
+	_draw_text(_short_text(str(notification.get("subtitle", "")), 34), rect.position + Vector2(104, 35), 9, ThemeScript.TEXT_MUTED)
+	var delete_rect := _notification_delete_rect(index)
+	_draw_rounded_rect(delete_rect, Color(0.18, 0.08, 0.08, 0.92), 10.0)
+	_draw_centered_text("X", delete_rect.position.x + delete_rect.size.x * 0.5, delete_rect.position.y + 17.0, 11, ThemeScript.TEXT)
+
+func _draw_notification_detail_modal() -> void:
+	if notification_selected.is_empty():
+		return
+	var rect := Rect2(84, 150, 472, 230)
+	_draw_rounded_rect(rect, Color(0.045, 0.052, 0.064, 0.99), 22.0)
+	_draw_rounded_outline(rect, Color(1.0, 1.0, 1.0, 0.12), 22.0)
+	var locked := bool(notification_selected.get("requires_pin", false))
+	var title := "Private reminder locked" if locked else str(notification_selected.get("title", "Reminder"))
+	var body := "Private reminder locked" if locked else str(notification_selected.get("body", "Reminder"))
+	var subtitle := "Enter PIN to view" if locked else str(notification_selected.get("subtitle", ""))
+	_draw_centered_text(_short_text(title, 42), 320.0, 190.0, 18, ThemeScript.TEXT)
+	_draw_centered_text(_short_text(body, 54), 320.0, 232.0, 15, ThemeScript.TEXT)
+	_draw_centered_text(_short_text(subtitle, 54), 320.0, 260.0, 11, ThemeScript.TEXT_MUTED)
+	_draw_button(Rect2(104, 354, 120, 34), "Close", false)
+	_draw_button(Rect2(260, 354, 120, 34), "Dismiss", false)
+	_draw_button(Rect2(416, 354, 120, 34), "Open", false)
+
 func _draw_notification_safe(rect: Rect2, label: String, message: String) -> void:
 	_draw_rounded_rect(rect, Color(0.078, 0.087, 0.104, 1.0), 16.0)
 	_draw_text(label, rect.position + Vector2(14, 25), 11, ThemeScript.TEXT_MUTED)
-	_draw_text(message, rect.position + Vector2(112, 25), 13, ThemeScript.TEXT)
+	_draw_text(_short_text(message, 42), rect.position + Vector2(148, 25), 12, ThemeScript.TEXT)
+
+func _reminders_latest_due_label() -> String:
+	var due_raw = reminders_due_data.get("due", [])
+	if due_raw is Array and not due_raw.is_empty():
+		var item: Dictionary = due_raw[0] as Dictionary
+		return _short_text(str(item.get("title", "Reminder")), 30)
+	return "Next " + str(reminders_data.get("next_due_at", "none"))
 
 func _draw_control_detail() -> void:
 	if selected_control_detail == "":
@@ -2880,6 +3571,75 @@ func _draw_study() -> void:
 	if text_input_open:
 		_draw_text_input_overlay()
 
+func _draw_reminders() -> void:
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	_draw_text("Reminders", Vector2(26, 44), 26, ThemeScript.TEXT)
+	_draw_text("Local alerts and past reminders", Vector2(28, 66), 11, ThemeScript.TEXT_MUTED)
+	_draw_pill(Rect2(520, 22, 92, 34), Color(0.10, 0.11, 0.13, 0.94), false)
+	_draw_centered_text("Home", 566.0, 43.0, 12, ThemeScript.TEXT_MUTED)
+	if reminders_mode == "add" or reminders_mode == "edit":
+		_draw_reminders_form()
+	else:
+		_draw_button(Rect2(44, 88, 160, 34), "Add Reminder", false)
+		_draw_button(Rect2(220, 88, 160, 34), "Edit", reminders_selected_id > 0)
+		_draw_button(Rect2(396, 88, 160, 34), "Delete", reminders_selected_id > 0)
+		var selected_title := "Selected: " + _short_text(str(reminders_selected_item.get("title", "None")), 34) if reminders_selected_id > 0 else "Selected: none"
+		var selected_due := "Due: " + str(reminders_selected_item.get("due_at", "")) if reminders_selected_id > 0 else "Due: none"
+		_draw_study_row(Rect2(44, 132, 552, 34), selected_title, selected_due)
+		_draw_reminders_table("Upcoming", "upcoming", _reminders_upcoming_scroll_rect(), reminders_upcoming_scroll_y)
+		_draw_reminders_table("Past", "past", _reminders_past_scroll_rect(), reminders_past_scroll_y)
+	if reminders_mode == "delete_confirm":
+		_draw_rounded_rect(Rect2(62, 286, 516, 128), Color(0.08, 0.04, 0.045, 0.98), 18.0)
+		_draw_rounded_outline(Rect2(62, 286, 516, 128), Color(1.0, 0.22, 0.22, 0.45), 18.0)
+		_draw_text("Delete selected reminder?", Vector2(84, 320), 17, ThemeScript.TEXT)
+		_draw_text("This cannot be undone.", Vector2(84, 344), 11, ThemeScript.TEXT_MUTED)
+		_draw_button(Rect2(78, 354, 210, 42), "Cancel", false)
+		_draw_button(Rect2(352, 354, 210, 42), "Confirm delete", true)
+	if reminders_status_text != "":
+		_draw_text(_short_text(reminders_status_text, 74), Vector2(34, 460), 10, ThemeScript.TEXT_DIM)
+	if text_input_open:
+		_draw_text_input_overlay()
+
+func _draw_reminders_table(title: String, kind: String, view_rect: Rect2, scroll_y: float) -> void:
+	_draw_text(title, view_rect.position + Vector2(0, -10), 15, ThemeScript.TEXT)
+	_draw_rounded_rect(view_rect, Color(0.060, 0.068, 0.082, 0.96), 12.0)
+	var rows_raw = reminders_data.get(kind, [])
+	if not (rows_raw is Array) or rows_raw.is_empty():
+		_draw_text("No reminders", view_rect.position + Vector2(14, 34), 11, ThemeScript.TEXT_MUTED)
+	else:
+		var rows: Array = rows_raw
+		for index in range(rows.size()):
+			var item: Dictionary = rows[index] as Dictionary
+			var row_rect := _reminder_row_rect(kind, index)
+			if not _rect_visible(row_rect, view_rect):
+				continue
+			var selected := int(item.get("id", 0)) == reminders_selected_id
+			_draw_tile(row_rect, selected)
+			_draw_text("✓" if selected else "○", row_rect.position + Vector2(8, 22), 11, ThemeScript.TEXT_MUTED)
+			_draw_text(_short_text(str(item.get("title", "Reminder")), 20), row_rect.position + Vector2(30, 17), 11, ThemeScript.TEXT)
+			_draw_text(_short_text(str(item.get("due_at", "")).replace("T", " "), 22), row_rect.position + Vector2(30, 31), 9, ThemeScript.TEXT_MUTED)
+			if bool(item.get("is_private", false)):
+				_draw_text("P", row_rect.position + Vector2(220, 22), 10, ThemeScript.TEXT_MUTED)
+	_draw_scrollbar(view_rect, scroll_y, _reminders_content_height(kind))
+
+func _draw_reminders_form() -> void:
+	_draw_text("Add Reminder" if reminders_mode == "add" else "Edit Reminder", Vector2(44, 104), 19, ThemeScript.TEXT)
+	_draw_study_row(Rect2(44, 136, 552, 34), "Reminder text", reminders_form_title if reminders_form_title != "" else "Tap to type")
+	_draw_study_row(Rect2(44, 178, 552, 34), "Notes", reminders_form_notes if reminders_form_notes != "" else "Optional")
+	_draw_reminder_form_field(Rect2(44, 220, 260, 34), "Date", reminders_form_date)
+	_draw_reminder_form_field(Rect2(324, 220, 170, 34), "Time", reminders_form_time)
+	_draw_button(Rect2(510, 220, 86, 34), "Private", reminders_form_private)
+	_draw_button(Rect2(44, 274, 76, 30), "+5m", false)
+	_draw_button(Rect2(130, 274, 76, 30), "+15m", false)
+	_draw_button(Rect2(216, 274, 76, 30), "+30m", false)
+	_draw_button(Rect2(302, 274, 76, 30), "+1h", false)
+	_draw_button(Rect2(388, 274, 92, 30), "Tomorrow", false)
+	_draw_button(Rect2(490, 274, 106, 30), "Next week", false)
+	_draw_study_row(Rect2(44, 326, 552, 34), "Reminder", reminders_form_date + " " + reminders_form_time)
+	_draw_text("This reminder will appear in Past." if _reminders_due_at_text() < Time.get_datetime_string_from_system(false, true) else "Upcoming reminder", Vector2(48, 374), 10, ThemeScript.TEXT_MUTED)
+	_draw_button(Rect2(44, 390, 170, 34), "Save", false)
+	_draw_button(Rect2(232, 390, 170, 34), "Cancel", false)
+
 func _draw_study_home() -> void:
 	for index in range(STUDY_TILES.size()):
 		var rect: Rect2 = _study_tile_rect(index)
@@ -3132,6 +3892,11 @@ func _draw_study_row(rect: Rect2, title: String, value: String) -> void:
 	_draw_text(_short_text(title, 26), rect.position + Vector2(12, 22), 12, ThemeScript.TEXT)
 	_draw_text(_short_text(value, 34), rect.position + Vector2(210, 22), 10, ThemeScript.TEXT_MUTED)
 
+func _draw_reminder_form_field(rect: Rect2, label: String, value: String) -> void:
+	_draw_tile(rect, false)
+	_draw_text(_short_text(label, 16), rect.position + Vector2(12, 14), 9, ThemeScript.TEXT_MUTED)
+	_draw_centered_text(_short_text(value, 16), rect.position.x + rect.size.x * 0.5, rect.position.y + 25.0, 13, ThemeScript.TEXT)
+
 func _draw_study_list(key: String, title_key: String, count_key: String, suffix: String, y_start: float) -> void:
 	var rows_raw = study_data.get(key, [])
 	if not (rows_raw is Array) or rows_raw.is_empty():
@@ -3172,11 +3937,12 @@ func _draw_text_input_overlay() -> void:
 	_draw_rounded_outline(Rect2(22, 72, 596, 372), Color(1.0, 1.0, 1.0, 0.08), 24.0)
 	_draw_text(text_input_title, Vector2(44, 108), 18, ThemeScript.TEXT)
 	_draw_study_row(Rect2(44, 122, 552, 38), "Input", text_input_value)
-	var keys := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?!-/:"
+	var keys := _text_input_keys()
 	for index in range(keys.length()):
 		var rect: Rect2 = _text_key_rect(index)
 		_draw_button(rect, keys.substr(index, 1), false)
-	_draw_button(Rect2(40, 386, 96, 34), "Space", false)
+	if text_input_keyboard_mode == "text":
+		_draw_button(Rect2(40, 386, 96, 34), "Space", false)
 	_draw_button(Rect2(146, 386, 96, 34), "Back", false)
 	_draw_button(Rect2(252, 386, 96, 34), "Clear", false)
 	_draw_button(Rect2(412, 386, 82, 34), "Save", true)

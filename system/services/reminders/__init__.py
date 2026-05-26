@@ -1,0 +1,2 @@
+"""Local Reminders service package."""
+

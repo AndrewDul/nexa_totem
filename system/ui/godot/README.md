@@ -88,6 +88,7 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Quick Shelf slides up from the bottom and closes with swipe-down, Escape, or Home.
 - Quick Shelf tiles are clickable.
 - Quick Shelf Settings, Diagnostics, Clock, Network, Camera, Logs, and Reports actions are wired.
+- Quick Shelf Reminders opens the local Reminders app.
 - Network, Camera, Logs, and Reports open Diagnostics with the selected tab active.
 - Other Quick Shelf tiles show visible planned status instead of silently doing nothing.
 - Quick Shelf scroll drag is limited to the scrollbar strip so it does not block normal tile taps.
@@ -107,6 +108,16 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Language Learning uses selected-list edit and separate practice screens with typed meaning checks, reveal answer, Correct/Wrong outcomes, and delete word/list actions.
 - Study delete-all uses a two-step confirmation before sending the delete request.
 - Study Stats is available inside Study, in Diagnostics, and from Quick Shelf when selected.
+- Reminders opens from Menu and Quick Shelf as a local 640x480 app with Add/Edit/Delete, Upcoming and Past tables, selected-row editing, quick relative due times, and delete confirmation.
+- Reminder due notifications show as a global overlay on any screen, in the top reminder indicator, and in Control Center Notifications.
+- Control Center notification rows are built from real due reminders, with no static sample notifications.
+- Control Center Notifications is generic and uses `No notifications` as the empty state.
+- Control Center notification rows scroll inside their own list area when there are many notifications.
+- Each Control Center reminder notification has a remove control, opens a compact detail modal when tapped, and can be dismissed with a left or right swipe.
+- Removing a notification dismisses/hides that notification entry and keeps the original reminder record available in Reminders/Past.
+- Private reminders use the existing PIN privacy state and show a locked placeholder until privacy is unlocked.
+- Reminder due polling runs on a safe interval, date/time fields use centered fixed-width drawing, and date/time input uses a numeric datetime keyboard.
+- Enabling a private reminder without a PIN opens Privacy PIN setup and preserves the reminder form state.
 - Display, Sound, Network, Remote, Diagnostics, Safety, About, and Exit NeXa pages are represented.
 - About shows NeXa ToTem project, author Andrzej Dul, DevDul, hardware, software, features, settings, and safety notes.
 - Safety and Exit NeXa actions are planned/safe only; the UI does not power off or reboot the Raspberry Pi.

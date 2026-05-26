@@ -65,6 +65,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     camera_preview = REPO_ROOT / "system/services/diagnostics/camera_preview.py"
     settings_store = REPO_ROOT / "system/services/settings/settings_store.py"
     study_store = REPO_ROOT / "system/services/study/study_store.py"
+    reminders_store = REPO_ROOT / "system/services/reminders/reminders_store.py"
     api_client = scripts_dir / "diagnostics_api_client.gd"
 
     project_text = read_text(project_godot)
@@ -76,6 +77,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     camera_preview_text = read_text(camera_preview)
     settings_store_text = read_text(settings_store)
     study_store_text = read_text(study_store)
+    reminders_store_text = read_text(reminders_store)
     live_collectors_text = read_text(REPO_ROOT / "system/services/diagnostics/live_collectors.py")
     job_runner_text = read_text(REPO_ROOT / "system/services/diagnostics/job_runner.py")
     all_text = project_text + "\n" + read_text(main_scene)
@@ -108,6 +110,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("camera_preview_exists", camera_preview.exists(), "Camera live preview worker exists.")
     add("settings_store_exists", settings_store.exists(), "Settings store exists.")
     add("study_store_exists", study_store.exists(), "Study store exists.")
+    add("reminders_store_exists", reminders_store.exists(), "Reminders store exists.")
     add("api_localhost", "127.0.0.1" in live_api_text and "8769" in live_api_text, "API binds localhost port 8769.")
 
     for screen_name in SCREEN_NAMES:
@@ -121,7 +124,9 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("no_themescript_runtime_helper_calls", "ThemeScript.draw_card" not in main_text and "ThemeScript.draw_pill" not in main_text and "ThemeScript.draw_soft_panel" not in main_text and "ThemeScript.draw_tile" not in main_text, "main.gd no longer calls ThemeScript drawing helpers at runtime.")
     add("settings_api_endpoints", "/api/settings" in live_api_text and "/api/settings/update" in live_api_text and "/api/settings/update-many" in live_api_text and "/api/privacy/pin/set" in live_api_text and "/api/privacy/pin/verify" in live_api_text and "/api/privacy/status" in live_api_text, "Settings and privacy API endpoints exist.")
     add("study_api_endpoints", "/api/study/overview" in live_api_text and "/api/study/pomodoro/start" in live_api_text and "/api/study/flashcards/decks/create" in live_api_text and "/api/study/quizzes/create" in live_api_text and "/api/study/languages/lists/create" in live_api_text and "/api/study/stats" in live_api_text, "Study API endpoints exist.")
+    add("reminders_api_endpoints", all(endpoint in live_api_text for endpoint in ["/api/reminders/overview", "/api/reminders/list", "/api/reminders/due", "/api/reminders/create", "/api/reminders/update", "/api/reminders/delete", "/api/reminders/dismiss", "/api/reminders/mark-triggered", "/api/reminders/settings/stats"]), "Reminders API endpoints exist.")
     add("study_sqlite_store", "sqlite3" in study_store_text and "var/data/study/nexa_study.db" in study_store_text and "NEXA_STUDY_DB_PATH" in study_store_text, "Study store uses local SQLite with test DB override.")
+    add("reminders_sqlite_store", "sqlite3" in reminders_store_text and "var/data/reminders/nexa_reminders.db" in reminders_store_text and "NEXA_REMINDERS_DB_PATH" in reminders_store_text and "PRAGMA user_version = 1" in reminders_store_text, "Reminders store uses local SQLite with schema version and test DB override.")
     add("study_duplicate_similar", "normalize_name" in study_store_text and "SequenceMatcher" in study_store_text and '"duplicate"' in study_store_text and '"similar"' in study_store_text, "Study store has duplicate and similar detection.")
     add("pin_hash_hidden", "pin_hash" in settings_store_text and "pin_salt" in settings_store_text and "safe_settings" in settings_store_text and "SENSITIVE_KEYS" in settings_store_text, "Settings API can remove PIN hash and salt.")
     add("pin_four_digits", "valid_pin" in settings_store_text and "len(pin) == 4" in settings_store_text and "pin.isdigit()" in settings_store_text, "PIN is constrained to four digits.")
@@ -218,6 +223,24 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("quick_shelf_diagnostics_tab_order", "_open_diagnostics()" in diagnostics_tab_func and "active_tab = tab_name" in diagnostics_tab_func and diagnostics_tab_func.find("_open_diagnostics()") < diagnostics_tab_func.find("active_tab = tab_name") and "_request_active_diagnostics_tab()" in diagnostics_tab_func, "Quick Shelf opens Diagnostics before selecting and requesting the chosen tab.")
     add("quick_shelf_touch_routing", "InputEventScreenTouch" in main_text and "InputEventScreenDrag" in main_text, "Touch taps and drags route through the same gesture path.")
     add("quick_shelf_study_actions", '"Study Stats"' in main_text and '_open_study("home")' in main_text and '_open_study("stats")' in main_text, "Quick Shelf Study and Study Stats actions are represented.")
+    add("quick_shelf_reminders_action", 'tile_name == "Reminders"' in main_text and "_open_reminders()" in main_text, "Quick Shelf Reminders opens Reminders.")
+    add("reminders_screen", 'nav.current_screen == "Reminders"' in main_text and "func _draw_reminders" in main_text and "_handle_reminders_tap" in main_text, "Reminders screen exists.")
+    add("menu_reminders_action", 'tile["title"] == "Reminders"' in main_text and "_open_reminders()" in main_text, "Menu Reminders opens Reminders.")
+    add("reminders_tables", "Upcoming" in main_text and "Past" in main_text and "reminders_upcoming_scroll_y" in main_text and "reminders_past_scroll_y" in main_text and "_draw_reminders_table" in main_text, "Reminders Upcoming and Past scrollable tables exist.")
+    add("reminders_single_selection", "reminders_selected_id" in main_text and "reminders_selected_item" in main_text and "_select_reminder" in main_text and '"Select one reminder first."' in main_text, "Reminders single selected reminder state exists.")
+    add("reminders_form", all(term in main_text for term in ["Add Reminder", '"Edit"', '"Delete"', "Reminder text", "Date", "Time", "+5m", "+15m", "+30m", "+1h", "Tomorrow", "Next week", '"Save"', '"Cancel"', "DELETE_REMINDER", "_draw_reminder_form_field"]), "Reminders Add/Edit/Delete form exists.")
+    add("reminders_due_notifications", "reminders_poll_accumulator" in main_text and "/api/reminders/due" in main_text and "reminders_interval := 1.0 if reminders_due_modal_open else 5.0" in main_text and "reminders_due_data = payload" in main_text and "due_count > 0" in main_text and "reminders_pending_due_id" in main_text and "_request_redraw()" in main_text.split("func _handle_reminders_api", 1)[1] and "_draw_due_reminder_modal" in main_text and "_draw_reminder_top_badge" in main_text and "Dismiss" in main_text and "Snooze +5m" in main_text and '"Open"' in main_text, "Reminder due polling and notification actions exist.")
+    add("reminders_datetime_keyboard", "text_input_keyboard_mode" in main_text and '{"keyboard_mode": "datetime"}' in main_text and "func _text_input_keys" in main_text and 'return "0123456789-"' in main_text and 'return "0123456789:"' in main_text and "_text_input_char_allowed" in main_text, "Reminder date/time uses numeric datetime keyboard and filters physical keyboard input.")
+    add("reminders_private_pin", "Private reminder locked" in main_text and "requires_pin" in main_text and "should_hide_private_reminders" in reminders_store_text and "NEXA_SETTINGS_PATH" in reminders_store_text and "reminders_pending_private_after_pin" in main_text and "_open_privacy_pin_setup_from_reminders" in main_text and 'pin_enabled' in main_text and "Private reminder enabled." in main_text, "Private reminder lock placeholder and privacy PIN setup integration exist.")
+    notification_dismiss_func = main_text.split("func _dismiss_notification", 1)[1].split("func _dismiss_pending_due_notification", 1)[0] if "func _dismiss_notification" in main_text and "func _dismiss_pending_due_notification" in main_text else ""
+    add("control_center_notification_model", "notifications_data" in main_text and "notification_selected" in main_text and "notification_detail_modal_open" in main_text and "notification_dismissed_ids" in main_text and "_rebuild_notifications_from_reminders" in main_text, "Control Center notifications are data-driven from due reminders.")
+    add("control_center_no_fake_notifications", '"Study plan"' not in main_text and '"UI running"' not in main_text, "Hardcoded fake Control Center notification rows are removed.")
+    add("control_center_notification_rows", "_notification_row_rect" in main_text and "_notification_delete_rect" in main_text and "_draw_notification_row" in main_text and '"No notifications"' in main_text, "Notification rows, delete buttons, and empty state exist.")
+    add("control_center_notification_modal", "_draw_notification_detail_modal" in main_text and "_handle_notification_tap" in main_text and "_open_notification_source" in main_text, "Notification tap opens a detail modal with source open action.")
+    add("control_center_notification_swipe", "notification_swipe_start_x" in main_text and "notification_swipe_start_y" in main_text and "notification_swipe_active_id" in main_text and "_begin_notification_swipe" in main_text and "_finish_notification_swipe" in main_text and "absf(dx) > 60.0" in main_text, "Notification rows support left/right swipe dismissal.")
+    add("control_center_notification_dismiss_safe", '/api/reminders/dismiss' in notification_dismiss_func and '/api/reminders/delete' not in notification_dismiss_func, "Notification dismissal calls reminder dismiss and does not delete reminder records.")
+    add("control_center_notification_private_locked", '"Private reminder locked"' in main_text and '"Enter PIN to view"' in main_text and "requires_pin" in main_text, "Private reminder notifications use locked placeholders.")
+    add("control_center_reminders_card", '"Reminders"' in main_text and "notifications_data" in main_text and "_draw_notifications_section_safe" in main_text, "Control Center Reminders notifications section exists.")
     add("study_screen", 'nav.current_screen == "Study"' in main_text and "func _draw_study" in main_text and "STUDY_TILES" in main_text, "Study screen exists.")
     study_tiles_const = main_text.split("const STUDY_TILES", 1)[1].split("var nav", 1)[0] if "const STUDY_TILES" in main_text and "var nav" in main_text else ""
     add("study_home_tiles", all(tile in study_tiles_const for tile in ["Smart Study", "Flashcards", "Quizzes", "Languages", "Study Stats", "History", "Settings"]) and '"Pomodoro"' not in study_tiles_const and '"Back"' not in study_tiles_const, "Study Home has Smart Study and no Pomodoro/Back tile.")
