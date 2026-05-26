@@ -178,6 +178,14 @@ Important design notes:
 - Phone or laptop control
 - Sensor dashboard
 - RGB control
+
+## Live Diagnostics API and Godot Diagnostics Data
+
+The Godot LCD prototype can read live diagnostics from a local Python standard-library API on `127.0.0.1:8769`.
+
+The API provides cached system, process, audio, camera, network, logs, reports, and benchmark status data. Godot keeps rendering lightweight by requesting only Control Center summary data or the active Diagnostics tab, and by running benchmarks, reports, camera checks, and audio checks only after button presses.
+
+Network and remote-network write actions are dry-run/planned in this sprint. Camera preview is off by default and is stopped when the preview is turned off or the Diagnostics camera view closes.
 - Head position control
 - Reminder and study controls
 - Local-first design with no cloud needed at the start

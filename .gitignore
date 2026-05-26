@@ -77,3 +77,6 @@ var/data/
 
 # Keep folder placeholders
 !.gitkeep
+
+# Local runtime data
+var/

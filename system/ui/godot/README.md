@@ -35,9 +35,32 @@ The current visual direction is polished toward a premium Apple-like style while
 - Panels do not stack; Face Home remains the center.
 - Reverse swipes close panels back to Face Home.
 - The UI remains fixed 640x480 windowed mode during development.
+- Raspberry Pi runtime uses Godot Compatibility/OpenGL renderer for stability.
+- Vulkan/Mobile crashed on Pi 5 2GB during Control Center with MESA GPU memory allocation errors.
+- Control Center uses safe mode drawing with a fixed, lightweight panel.
 
 The Diagnostics screen uses tabs because diagnostics will have many categories.
 
 Godot is the local visual UI layer only. Python remains the backend and the source of system logic, diagnostics, reports, and resource data.
 
 The UI must not run hardware checks directly. Later it should read from the Python backend API or saved diagnostic reports.
+
+The current prototype now reads live diagnostics through the local Python API at `127.0.0.1:8769`.
+
+- Godot does not run hardware checks or shell commands directly.
+- Control Center uses a lightweight `/api/control-center` request so opening it stays instant.
+- Control Center opens from cached/default state first, then refreshes API data after the slide transition.
+- The Wi-Fi tile opens a compact detail panel with the connected network, up to three saved networks, and up to three available networks.
+- Brightness and sound sliders are interactive prototype controls that update locally immediately.
+- Diagnostics requests only the active tab data and shows Pending or API offline when data is not ready.
+- Processes, System, and Camera tabs poll only while open.
+- Camera preview is low-FPS, controlled by an explicit toggle, and stopped when the camera tab or Diagnostics closes.
+- Camera tab fetches the latest preview frame only while Camera is active and preview is on.
+- Camera tab uses a compact layout that stays inside the Diagnostics panel.
+- Preview is stopped when leaving Camera, leaving Diagnostics, or returning Home/Escape.
+- Remote Wi-Fi means NeXa's own network/AP state; Remote means the handheld controller connection state.
+- Benchmark, report, camera check, and audio check buttons use pending/running/done states.
+- Network tab shows connected, saved, and available Wi-Fi networks when they can be read safely.
+- Benchmarks run on demand and show result rows after completion.
+- Wi-Fi connect actions are planned/dry-run in this sprint; the UI does not change real network connections.
+- Wi-Fi and remote network write actions are dry-run/planned in this sprint.

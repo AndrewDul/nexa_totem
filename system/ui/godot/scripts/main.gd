@@ -5,6 +5,7 @@ const GestureDetectorScript := preload("res://scripts/gesture_detector.gd")
 const FaceRendererScript := preload("res://scripts/face_renderer.gd")
 const DiagnosticsDataScript := preload("res://scripts/diagnostics_data.gd")
 const ThemeScript := preload("res://scripts/theme.gd")
+const DiagnosticsApiClientScript := preload("res://scripts/diagnostics_api_client.gd")
 
 const WIDTH := 640.0
 const HEIGHT := 480.0
@@ -13,6 +14,7 @@ const REDRAW_INTERVAL := 1.0 / TARGET_REDRAW_FPS
 const CLOCK_REDRAW_INTERVAL := 1.0
 const TRANSITION_SECONDS := 0.14
 const CLOSE_TRANSITION_SECONDS := 0.10
+const CONTROL_CENTER_SAFE_MODE := true
 const MENU_TILES := [
 	{"icon": "◷", "title": "Time", "subtitle": "Clock"},
 	{"icon": "◌", "title": "Study", "subtitle": "Focus"},
@@ -39,9 +41,30 @@ var nav := NavigationControllerScript.new()
 var gesture := GestureDetectorScript.new()
 var face := FaceRendererScript.new()
 var diagnostics_data := DiagnosticsDataScript.new()
+var api := DiagnosticsApiClientScript.new()
 var elapsed := 0.0
 var active_tab := "Overview"
 var panel_data := {}
+var api_online := false
+var api_status_text := "API offline"
+var control_center_data := {}
+var network_detail_data := {}
+var network_detail_pending := false
+var overview_live_data := {}
+var active_tab_data := {}
+var api_poll_accumulator := 0.0
+var control_center_refresh_pending := false
+var brightness_percent := 65
+var sound_percent := 50
+var quiet_mode_local := false
+var remote_network_local := "planned"
+var slider_drag_active := false
+var slider_drag_kind := ""
+var camera_preview_on := false
+var camera_preview_status := "Off"
+var camera_frame_texture: ImageTexture = null
+var camera_frame_poll_accumulator := 0.0
+var selected_control_detail := ""
 var transition_active := false
 var transition_overlay := ""
 var transition_direction := "none"
@@ -60,6 +83,10 @@ var scroll_drag_last_y := 0.0
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDTH, HEIGHT)
 	panel_data = diagnostics_data.load_panel_data()
+	add_child(api)
+	api.data_received.connect(_on_api_data_received)
+	api.api_offline.connect(_on_api_offline)
+	api.frame_received.connect(_on_camera_frame_received)
 	set_process(true)
 	_request_redraw()
 
@@ -73,6 +100,8 @@ func _process(delta: float) -> void:
 			transition_active = false
 			if transition_closing:
 				nav.current_screen = "Face Home"
+			elif nav.current_screen == "Notification Control Center":
+				control_center_refresh_pending = true
 			_request_redraw()
 	# Redraw is throttled: Face Home and transitions animate at 30 FPS max,
 	# static panels draw only after input/open/tab changes, and Clock ticks once per second.
@@ -85,6 +114,7 @@ func _process(delta: float) -> void:
 	elif clock_tick:
 		clock_redraw_accumulator = 0.0
 		queue_redraw()
+	_update_api_polling(delta)
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
@@ -96,11 +126,16 @@ func _gui_input(event: InputEvent) -> void:
 			return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
+			if _begin_slider_drag(event.position):
+				return
 			if _begin_scroll_drag(event.position):
 				return
 			else:
 				gesture.begin(event.position, elapsed)
 		else:
+			if slider_drag_active:
+				_finish_slider_drag()
+				return
 			if scroll_drag_active:
 				scroll_drag_active = false
 				scroll_drag_area = ""
@@ -110,6 +145,8 @@ func _gui_input(event: InputEvent) -> void:
 		gesture.update(event.position)
 	if event is InputEventMouseMotion and scroll_drag_active:
 		_update_scroll_drag(event.position)
+	if event is InputEventMouseMotion and slider_drag_active:
+		_update_slider_drag(event.position)
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.pressed:
@@ -152,13 +189,13 @@ func _handle_tap(position: Vector2) -> void:
 		_handle_menu_tap(position)
 		return
 	if nav.current_screen == "Notification Control Center":
-		if position.y > 112.0 and position.y < 278.0 and position.x > 408.0:
-			_open_diagnostics()
+		_handle_control_center_tap(position)
 		return
 	if nav.current_screen == "Diagnostics":
 		if Rect2(536, 22, 78, 34).has_point(position):
 			_go_home()
 			return
+		_handle_diagnostics_action_tap(position)
 		_handle_diagnostics_tap(position)
 
 func _handle_menu_tap(position: Vector2) -> void:
@@ -176,10 +213,102 @@ func _handle_diagnostics_tap(position: Vector2) -> void:
 	for index in range(DIAGNOSTIC_TABS.size()):
 		var rect: Rect2 = _diagnostic_tab_rect(index)
 		if rect.has_point(position):
+			if active_tab == "Camera" and str(DIAGNOSTIC_TABS[index]) != "Camera":
+				_stop_camera_preview()
 			active_tab = str(DIAGNOSTIC_TABS[index])
 			diagnostic_scroll_y = 0.0
+			active_tab_data = {}
+			_request_active_diagnostics_tab()
 			_request_redraw()
 			return
+
+func _handle_control_center_tap(position: Vector2) -> void:
+	for index in range(6):
+		var rect: Rect2 = Rect2(44.0 + float(index % 3) * 184.0, 124.0 + float(int(index / 3)) * 76.0, 164.0, 62.0)
+		if not rect.has_point(position):
+			continue
+		if index == 0:
+			selected_control_detail = "brightness"
+		elif index == 1:
+			selected_control_detail = "sound"
+		elif index == 2:
+			quiet_mode_local = not quiet_mode_local
+			control_center_data["quiet_mode"] = quiet_mode_local
+			api.request_post("/api/control/quiet-mode", {"enabled": quiet_mode_local})
+			selected_control_detail = "quiet"
+		elif index == 3:
+			selected_control_detail = "wifi"
+			network_detail_pending = true
+		elif index == 4:
+			remote_network_local = "on" if remote_network_local != "on" else "off"
+			control_center_data["remote_network_state"] = remote_network_local
+			api.request_post("/api/control/remote-network", {"state": remote_network_local})
+			selected_control_detail = "remote"
+		elif index == 5:
+			_open_diagnostics()
+		_request_redraw()
+		return
+
+func _handle_diagnostics_action_tap(position: Vector2) -> void:
+	if active_tab == "Benchmarks" and Rect2(416, 154, 154, 34).has_point(position):
+		api.request_post("/api/benchmarks/run")
+	elif active_tab == "Reports" and Rect2(416, 154, 154, 34).has_point(position):
+		api.request_post("/api/reports/generate")
+	elif active_tab == "Logs" and Rect2(416, 154, 154, 34).has_point(position):
+		api.request_get("/api/logs")
+	elif active_tab == "Camera" and Rect2(350, 316 - diagnostic_scroll_y, 190, 34).has_point(position):
+		if camera_preview_on:
+			_stop_camera_preview()
+		else:
+			camera_preview_on = true
+			camera_preview_status = "Starting"
+			api.request_post("/api/camera/preview/start")
+	elif active_tab == "Camera" and Rect2(350, 356 - diagnostic_scroll_y, 190, 34).has_point(position):
+		api.request_post("/api/camera/check/run")
+	elif active_tab == "Audio" and Rect2(416, 154, 154, 34).has_point(position):
+		api.request_post("/api/audio/check/run")
+
+func _brightness_slider_rect() -> Rect2:
+	return Rect2(58, 174, 132, 12)
+
+func _sound_slider_rect() -> Rect2:
+	return Rect2(242, 174, 132, 12)
+
+func _begin_slider_drag(position: Vector2) -> bool:
+	if nav.current_screen != "Notification Control Center":
+		return false
+	if _brightness_slider_rect().has_point(position):
+		slider_drag_active = true
+		slider_drag_kind = "brightness"
+		selected_control_detail = "brightness"
+		_update_slider_drag(position)
+		return true
+	if _sound_slider_rect().has_point(position):
+		slider_drag_active = true
+		slider_drag_kind = "sound"
+		selected_control_detail = "sound"
+		_update_slider_drag(position)
+		return true
+	return false
+
+func _update_slider_drag(position: Vector2) -> void:
+	var rect: Rect2 = _brightness_slider_rect() if slider_drag_kind == "brightness" else _sound_slider_rect()
+	var value: int = int(round(clampf((position.x - rect.position.x) / rect.size.x, 0.0, 1.0) * 100.0))
+	if slider_drag_kind == "brightness":
+		brightness_percent = value
+		control_center_data["brightness_percent"] = brightness_percent
+	elif slider_drag_kind == "sound":
+		sound_percent = value
+		control_center_data["sound_percent"] = sound_percent
+	_request_redraw()
+
+func _finish_slider_drag() -> void:
+	if slider_drag_kind == "brightness":
+		api.request_post("/api/control/brightness", {"brightness_percent": brightness_percent, "auto_brightness": bool(control_center_data.get("brightness_auto", false))})
+	elif slider_drag_kind == "sound":
+		api.request_post("/api/control/sound", {"sound_percent": sound_percent, "muted": bool(control_center_data.get("muted", false))})
+	slider_drag_active = false
+	slider_drag_kind = ""
 
 func _begin_scroll_drag(position: Vector2) -> bool:
 	if nav.current_screen == "Diagnostics" and _diagnostics_scroll_rect().has_point(position) and _diagnostics_max_scroll() > 0.0:
@@ -229,10 +358,18 @@ func _diagnostics_content_height() -> float:
 	if active_tab == "Processes":
 		return 362.0
 	if active_tab == "Benchmarks":
+		return 420.0
+	if active_tab == "Camera":
 		return 300.0
+	if active_tab == "Logs":
+		return 420.0
+	if active_tab == "Reports":
+		return 340.0
 	if active_tab == "Overview":
-		return 260.0
-	return 220.0
+		return 400.0
+	if active_tab == "Network":
+		return 520.0
+	return 260.0
 
 func _control_center_content_height() -> float:
 	return 182.0
@@ -245,11 +382,16 @@ func _open_clock() -> void:
 
 func _open_control_center() -> void:
 	_navigate_to("Notification Control Center", "control_open")
+	control_center_refresh_pending = true
+	# Control Center opens from cached data first. API refresh happens after transition to avoid UI lag.
 
 func _open_diagnostics() -> void:
 	nav.previous_screen = nav.current_screen
 	nav.current_screen = "Diagnostics"
 	transition_active = false
+	active_tab = "Overview"
+	active_tab_data = {}
+	api.request_get("/api/overview")
 	_request_redraw()
 
 func _open_settings_placeholder() -> void:
@@ -263,6 +405,8 @@ func _open_placeholder(title: String) -> void:
 func _go_home() -> void:
 	if nav.current_screen == "Face Home":
 		return
+	if nav.current_screen == "Diagnostics" and active_tab == "Camera":
+		_stop_camera_preview()
 	var direction := "diagnostics"
 	if nav.current_screen == "Menu":
 		direction = "menu_close"
@@ -294,6 +438,130 @@ func _navigate_to(screen_name: String, direction: String) -> void:
 
 func _request_redraw() -> void:
 	redraw_requested = true
+
+func _update_api_polling(delta: float) -> void:
+	if api.in_flight:
+		return
+	api_poll_accumulator += delta
+	if transition_active:
+		return
+	if nav.current_screen == "Notification Control Center" and control_center_refresh_pending:
+		control_center_refresh_pending = false
+		api_poll_accumulator = 0.0
+		api.request_get("/api/control-center")
+	elif nav.current_screen == "Notification Control Center" and selected_control_detail == "wifi" and network_detail_pending:
+		network_detail_pending = false
+		api_poll_accumulator = 0.0
+		api.request_get("/api/network")
+	elif nav.current_screen == "Notification Control Center" and api_poll_accumulator >= 3.0:
+		api_poll_accumulator = 0.0
+		api.request_get("/api/control-center")
+	elif nav.current_screen == "Diagnostics":
+		var interval: float = 5.0
+		if active_tab == "Processes":
+			interval = 1.0
+		elif active_tab == "System":
+			interval = 2.0
+		elif active_tab == "Camera":
+			interval = 2.0 if not camera_preview_on else 1.0
+		if api_poll_accumulator >= interval:
+			api_poll_accumulator = 0.0
+			_request_active_diagnostics_tab()
+	if nav.current_screen == "Diagnostics" and active_tab == "Camera" and camera_preview_on and not api.frame_in_flight:
+		camera_frame_poll_accumulator += delta
+		if camera_frame_poll_accumulator >= 0.12:
+			camera_frame_poll_accumulator = 0.0
+			api.request_frame("/api/camera/preview/frame")
+
+func _request_active_diagnostics_tab() -> void:
+	var endpoint: String = "/api/overview"
+	if active_tab == "System":
+		endpoint = "/api/system"
+	elif active_tab == "Processes":
+		endpoint = "/api/processes"
+	elif active_tab == "Camera":
+		endpoint = "/api/camera"
+	elif active_tab == "Audio":
+		endpoint = "/api/audio"
+	elif active_tab == "Network":
+		endpoint = "/api/network"
+	elif active_tab == "Logs":
+		endpoint = "/api/logs"
+	elif active_tab == "Reports":
+		endpoint = "/api/reports"
+	elif active_tab == "Benchmarks":
+		endpoint = "/api/benchmarks/status"
+	api.request_get(endpoint)
+
+func _stop_camera_preview() -> void:
+	if camera_preview_on:
+		camera_preview_on = false
+		camera_preview_status = "Off"
+		camera_frame_texture = null
+		api.request_post("/api/camera/preview/stop")
+
+func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
+	api_online = true
+	api_status_text = "API online"
+	if endpoint == "/api/control-center":
+		control_center_data = payload
+		brightness_percent = int(payload.get("brightness_percent", brightness_percent))
+		if payload.get("sound_percent", null) != null:
+			sound_percent = int(payload.get("sound_percent", sound_percent))
+		quiet_mode_local = bool(payload.get("quiet_mode", quiet_mode_local))
+		remote_network_local = str(payload.get("remote_network_state", remote_network_local))
+	elif endpoint == "/api/overview":
+		overview_live_data = payload
+		active_tab_data = payload
+	elif endpoint == "/api/network":
+		network_detail_data = payload
+		if nav.current_screen == "Diagnostics" and active_tab == "Network":
+			active_tab_data = payload
+	else:
+		active_tab_data = payload
+		if endpoint == "/api/camera":
+			var preview_raw = payload.get("preview", {})
+			if preview_raw is Dictionary:
+				camera_preview_on = bool(preview_raw.get("enabled", camera_preview_on))
+				var camera_mode: String = str(preview_raw.get("mode", "off"))
+				if camera_mode == "unavailable":
+					camera_preview_status = "Live unavailable"
+				elif bool(preview_raw.get("frame_available", false)):
+					camera_preview_status = "On"
+				elif camera_preview_on:
+					camera_preview_status = "No frame yet" if preview_raw.get("error", null) == null else str(preview_raw.get("error"))
+				else:
+					camera_preview_status = "Off"
+		if endpoint == "/api/camera/preview/start" or endpoint == "/api/camera/preview/status":
+			camera_preview_on = bool(payload.get("enabled", camera_preview_on))
+			var preview_mode: String = str(payload.get("mode", "off"))
+			if preview_mode == "unavailable":
+				camera_preview_status = "Live unavailable"
+			else:
+				camera_preview_status = "On" if bool(payload.get("frame_available", false)) else ("Starting" if camera_preview_on else "Off")
+		if endpoint == "/api/camera/preview/stop":
+			camera_preview_on = false
+			camera_preview_status = "Off"
+	_request_redraw()
+
+func _on_api_offline(endpoint: String) -> void:
+	api_online = false
+	api_status_text = "API offline"
+	if endpoint == "/api/camera/preview/frame" and camera_preview_on:
+		camera_preview_status = "No frame yet"
+	_request_redraw()
+
+func _on_camera_frame_received(_endpoint: String, body: PackedByteArray) -> void:
+	var image := Image.new()
+	var error: int = image.load_jpg_from_buffer(body)
+	if error != OK:
+		error = image.load_png_from_buffer(body)
+	if error == OK:
+		camera_frame_texture = ImageTexture.create_from_image(image)
+		camera_preview_status = "On"
+	else:
+		camera_preview_status = "No frame yet"
+	_request_redraw()
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), ThemeScript.BACKGROUND, true)
@@ -369,6 +637,11 @@ func _font():
 func _draw_text(text: String, position: Vector2, size: int = 18, color: Color = ThemeScript.TEXT) -> void:
 	draw_string(_font(), position, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, color)
 
+func _short_text(text: String, max_chars: int) -> String:
+	if text.length() <= max_chars:
+		return text
+	return text.substr(0, max_chars - 1) + "…"
+
 func _draw_centered_text(text: String, center_x: float, baseline_y: float, size: int, color: Color = ThemeScript.TEXT) -> void:
 	var text_size: Vector2 = _font().get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size)
 	_draw_text(text, Vector2(center_x - text_size.x * 0.5, baseline_y), size, color)
@@ -389,10 +662,17 @@ func _draw_pill(rect: Rect2, color: Color = ThemeScript.PANEL_SOFT, active: bool
 	_draw_rounded_outline(rect, Color(0.34, 0.62, 1.0, 0.35) if active else Color(1.0, 1.0, 1.0, 0.07), radius)
 
 func _draw_tile(rect: Rect2, active: bool = false) -> void:
-	var fill: Color = Color(0.12, 0.135, 0.16, 1.0) if active else Color(0.09, 0.102, 0.125, 1.0)
+	var fill: Color = Color(0.11, 0.32, 0.66, 1.0) if active else Color(0.09, 0.102, 0.125, 1.0)
 	_draw_card(rect, fill, 22.0, false)
 	if active:
 		_draw_rounded_rect(Rect2(rect.position + Vector2(0.0, 12.0), Vector2(4.0, rect.size.y - 24.0)), ThemeScript.BLUE, 2.0)
+
+func _draw_slider_bar(rect: Rect2, percent_value, active: bool = false) -> void:
+	var percent: float = 0.0
+	if percent_value != null:
+		percent = clampf(float(percent_value) / 100.0, 0.0, 1.0)
+	_draw_rounded_rect(rect, Color(1.0, 1.0, 1.0, 0.08), rect.size.y * 0.5)
+	_draw_rounded_rect(Rect2(rect.position, Vector2(rect.size.x * percent, rect.size.y)), ThemeScript.BLUE if active else Color(0.36, 0.62, 0.96, 0.9), rect.size.y * 0.5)
 
 func _draw_rounded_rect(rect: Rect2, color: Color, radius: float) -> void:
 	var r: float = minf(radius, minf(rect.size.x, rect.size.y) * 0.5)
@@ -477,24 +757,33 @@ func _draw_clock() -> void:
 	# Future timing settings: show clock every X minutes, show clock duration seconds.
 
 func _draw_control_center() -> void:
+	if CONTROL_CENTER_SAFE_MODE:
+		_draw_control_center_safe()
+		return
 	_draw_soft_panel(Rect2(20, 20, 600, 440), 30.0)
 	_draw_text("Control Center", Vector2(44, 64), 26, ThemeScript.TEXT)
 	_draw_pill(Rect2(44, 82, 104, 26), Color(0.10, 0.16, 0.12, 1.0), false)
 	_draw_text("System OK", Vector2(60, 100), 12, ThemeScript.OK)
 	var controls: Array = [
-		{"title": "Brightness", "value": "Soft"},
-		{"title": "Sound", "value": "Desk"},
-		{"title": "Quiet Mode", "value": "Off"},
-		{"title": "Wi-Fi", "value": "Home"},
-		{"title": "Remote", "value": "Ready"},
+		{"title": "Brightness", "value": str(brightness_percent) + "%"},
+		{"title": "Sound", "value": str(sound_percent) + "%"},
+		{"title": "Quiet Mode", "value": "On" if bool(control_center_data.get("quiet_mode", false)) else "Off"},
+		{"title": "Wi-Fi", "value": str(control_center_data.get("connected_ssid", "Unknown"))},
+		{"title": "Remote", "value": str(control_center_data.get("remote_network_state", "planned"))},
 		{"title": "Diagnostics", "value": "Open"}
 	]
 	for index in range(controls.size()):
 		var rect: Rect2 = Rect2(44.0 + float(index % 3) * 184.0, 124.0 + float(int(index / 3)) * 76.0, 164.0, 62.0)
 		var item: Dictionary = controls[index] as Dictionary
-		_draw_tile(rect, item["title"] == "Diagnostics")
+		var active: bool = item["title"] == "Diagnostics" or (item["title"] == "Quiet Mode" and bool(control_center_data.get("quiet_mode", false))) or (item["title"] == "Remote" and control_center_data.get("remote_network_state", "planned") == "on")
+		_draw_tile(rect, active)
 		_draw_text(str(item["title"]), rect.position + Vector2(14, 27), 15, ThemeScript.TEXT)
 		_draw_text(str(item["value"]), rect.position + Vector2(14, 48), 11, ThemeScript.TEXT_MUTED)
+		if item["title"] == "Brightness":
+			_draw_slider_bar(Rect2(rect.position.x + 14.0, rect.position.y + 50.0, 132.0, 5.0), brightness_percent, active)
+		elif item["title"] == "Sound":
+			_draw_slider_bar(Rect2(rect.position.x + 14.0, rect.position.y + 50.0, 132.0, 5.0), sound_percent, active)
+	_draw_control_detail()
 	_draw_text("Notifications", Vector2(46, 292), 20, ThemeScript.TEXT)
 	var control_view: Rect2 = _control_scroll_rect()
 	var y_offset: float = control_center_scroll_y
@@ -503,6 +792,111 @@ func _draw_control_center() -> void:
 	_draw_notification(Rect2(44, 398 - y_offset, 552, 38), "Private", "Locked", control_view)
 	_draw_notification(Rect2(44, 442 - y_offset, 552, 38), "System", "No saved report", control_view)
 	_draw_scrollbar(control_view, control_center_scroll_y, _control_center_content_height())
+
+func _draw_control_center_safe() -> void:
+	# Pi-safe Control Center: fixed visible content, no scroll pass, no shadows,
+	# no detail card during slide transition, and only cheap rounded rectangles.
+	_draw_rounded_rect(Rect2(20, 20, 600, 440), Color(0.055, 0.062, 0.075, 1.0), 26.0)
+	_draw_rounded_outline(Rect2(20, 20, 600, 440), Color(1.0, 1.0, 1.0, 0.07), 26.0)
+	_draw_text("Control Center", Vector2(44, 62), 25, ThemeScript.TEXT)
+	_draw_text(api_status_text if not api_online else "System OK", Vector2(46, 88), 11, ThemeScript.TEXT_MUTED)
+	var controls: Array = [
+		{"title": "Brightness", "value": str(brightness_percent) + "%"},
+		{"title": "Sound", "value": str(sound_percent) + "%"},
+		{"title": "Quiet Mode", "value": "On" if quiet_mode_local else "Off"},
+		{"title": "Wi-Fi", "value": str(control_center_data.get("connected_ssid", "Unknown"))},
+		{"title": "Remote", "value": remote_network_local},
+		{"title": "Diagnostics", "value": "Open"}
+	]
+	for index in range(controls.size()):
+		var rect: Rect2 = Rect2(44.0 + float(index % 3) * 184.0, 118.0 + float(int(index / 3)) * 80.0, 164.0, 66.0)
+		var item: Dictionary = controls[index] as Dictionary
+		var active: bool = selected_control_detail == str(item["title"]).to_lower() or (item["title"] == "Wi-Fi" and selected_control_detail == "wifi") or item["title"] == "Diagnostics" or (item["title"] == "Quiet Mode" and quiet_mode_local) or (item["title"] == "Remote" and remote_network_local == "on")
+		var fill: Color = Color(0.10, 0.29, 0.58, 1.0) if active else Color(0.085, 0.095, 0.112, 1.0)
+		_draw_rounded_rect(rect, fill, 18.0)
+		_draw_rounded_outline(rect, Color(1.0, 1.0, 1.0, 0.08), 18.0)
+		_draw_text(str(item["title"]), rect.position + Vector2(14, 25), 14, ThemeScript.TEXT)
+		_draw_text(str(item["value"]), rect.position + Vector2(14, 44), 11, ThemeScript.TEXT_MUTED)
+		if item["title"] == "Brightness":
+			_draw_slider_bar(Rect2(rect.position.x + 14.0, rect.position.y + 52.0, 132.0, 5.0), brightness_percent, active)
+		elif item["title"] == "Sound":
+			_draw_slider_bar(Rect2(rect.position.x + 14.0, rect.position.y + 52.0, 132.0, 5.0), sound_percent, active)
+	if not transition_active:
+		if selected_control_detail == "wifi":
+			_draw_wifi_detail_safe()
+		else:
+			_draw_control_detail_safe()
+			_draw_text("Notifications", Vector2(46, 300), 18, ThemeScript.TEXT)
+			_draw_notification_safe(Rect2(44, 318, 552, 40), "Reminder", "Study plan")
+			_draw_notification_safe(Rect2(44, 366, 552, 40), "System", "UI running")
+
+func _draw_control_detail_safe() -> void:
+	if selected_control_detail == "":
+		return
+	var rect: Rect2 = Rect2(44, 420, 552, 28)
+	_draw_rounded_rect(rect, Color(0.075, 0.085, 0.105, 1.0), 14.0)
+	var label := "Ready"
+	if selected_control_detail == "brightness":
+		label = "Brightness " + str(brightness_percent) + "% · Auto planned"
+	elif selected_control_detail == "sound":
+		label = "Sound " + str(sound_percent) + "% · " + str(control_center_data.get("speaker_name", "Unknown"))
+	elif selected_control_detail == "wifi":
+		label = "Wi-Fi " + str(control_center_data.get("connected_ssid", "Unknown")) + " · Connect planned"
+	elif selected_control_detail == "remote":
+		label = "Remote " + remote_network_local + " · dry-run"
+	_draw_text(label, rect.position + Vector2(14, 19), 11, ThemeScript.TEXT_MUTED)
+
+func _draw_wifi_detail_safe() -> void:
+	var rect: Rect2 = Rect2(44, 292, 552, 156)
+	_draw_rounded_rect(rect, Color(0.075, 0.085, 0.105, 1.0), 18.0)
+	_draw_rounded_outline(rect, Color(1.0, 1.0, 1.0, 0.07), 18.0)
+	var connected_value: String = str(network_detail_data.get("connected_ssid", control_center_data.get("connected_ssid", "Pending")))
+	if connected_value == "" or connected_value == "<null>":
+		connected_value = "Unknown"
+	_draw_text("Wi-Fi details", rect.position + Vector2(14, 24), 14, ThemeScript.TEXT)
+	_draw_text("Connected: " + connected_value, rect.position + Vector2(14, 45), 11, ThemeScript.TEXT_MUTED)
+	_draw_text("Saved", rect.position + Vector2(14, 72), 12, ThemeScript.TEXT)
+	_draw_text("Available", rect.position + Vector2(282, 72), 12, ThemeScript.TEXT)
+	var saved_raw = network_detail_data.get("saved_networks", [])
+	var saved: Array = []
+	if saved_raw is Array:
+		saved = saved_raw
+	var available_raw = network_detail_data.get("available_networks", [])
+	var available: Array = []
+	if available_raw is Array:
+		available = available_raw
+	for index in range(3):
+		var saved_label: String = "Pending" if network_detail_pending else "None found"
+		if index < saved.size():
+			saved_label = _short_text(str(saved[index]), 22)
+		var available_label: String = "Pending" if network_detail_pending else "Unavailable"
+		if index < available.size():
+			available_label = _short_text(str(available[index]), 22)
+		_draw_text(saved_label, rect.position + Vector2(14, 93 + index * 16), 10, ThemeScript.TEXT_MUTED)
+		_draw_text(available_label, rect.position + Vector2(282, 93 + index * 16), 10, ThemeScript.TEXT_MUTED)
+	_draw_text("Action: Connect planned · dry-run", rect.position + Vector2(14, 143), 10, ThemeScript.TEXT_DIM)
+
+func _draw_notification_safe(rect: Rect2, label: String, message: String) -> void:
+	_draw_rounded_rect(rect, Color(0.078, 0.087, 0.104, 1.0), 16.0)
+	_draw_text(label, rect.position + Vector2(14, 25), 11, ThemeScript.TEXT_MUTED)
+	_draw_text(message, rect.position + Vector2(112, 25), 13, ThemeScript.TEXT)
+
+func _draw_control_detail() -> void:
+	if selected_control_detail == "":
+		return
+	var rect: Rect2 = Rect2(222, 76, 374, 42)
+	_draw_card(rect, Color(0.075, 0.085, 0.105, 0.98), 17.0, false)
+	var label: String = selected_control_detail + " details"
+	if selected_control_detail == "wifi":
+		label = "Connected: " + str(control_center_data.get("connected_ssid", "Unknown")) + " · Connect planned"
+	elif selected_control_detail == "remote":
+		label = "Remote: " + remote_network_local + " · dry-run"
+	elif selected_control_detail == "sound":
+		label = "Speaker: " + str(control_center_data.get("speaker_name", "Unknown"))
+		_draw_text("Volume " + str(sound_percent) + "% · Muted " + str(control_center_data.get("muted", "Unknown")), rect.position + Vector2(14, 34), 10, ThemeScript.TEXT_DIM)
+	elif selected_control_detail == "brightness":
+		label = "Brightness: " + str(brightness_percent) + "% · Auto planned"
+	_draw_text(label, rect.position + Vector2(14, 22), 12, ThemeScript.TEXT_MUTED)
 
 func _draw_notification(rect: Rect2, label: String, message: String, view_rect: Rect2) -> void:
 	if rect.position.y + rect.size.y < view_rect.position.y or rect.position.y > view_rect.position.y + view_rect.size.y:
@@ -540,29 +934,47 @@ func _draw_diagnostics_tab_content() -> void:
 		_draw_process_rows(offset_y, view_rect)
 	elif active_tab == "Benchmarks":
 		_draw_benchmark_rows(offset_y, view_rect)
+	elif active_tab == "Camera":
+		_draw_camera_rows(offset_y, view_rect)
+	elif active_tab == "Audio":
+		_draw_audio_rows(offset_y, view_rect)
+	elif active_tab == "Reports":
+		_draw_reports_rows(offset_y, view_rect)
+	elif active_tab == "Logs":
+		_draw_logs_rows(offset_y, view_rect)
 	elif active_tab == "Network":
 		_draw_network_rows(offset_y, view_rect)
 	else:
 		_draw_info_row(52, 226 - offset_y, active_tab, "No saved report", "Waiting", view_rect)
 
 func _draw_overview_cards(offset_y: float, view_rect: Rect2) -> void:
+	var gpu_body := "Not supported"
+	if bool(overview_live_data.get("gpu_usage_supported", false)) and overview_live_data.get("gpu_usage_percent", null) != null:
+		gpu_body = str(overview_live_data.get("gpu_usage_percent")) + "%"
+	elif str(overview_live_data.get("gpu_usage_status", "not_supported")) != "not_supported":
+		gpu_body = "Unknown"
 	var cards: Array = [
-		{"title": "Overall", "body": panel_data.get("status", "No report"), "pill": "OK"},
-		{"title": "Raspberry Pi", "body": "No saved report", "pill": "Saved"},
-		{"title": "Speaker", "body": "Ready", "pill": "Ready"},
-		{"title": "Camera", "body": "Ready", "pill": "Ready"},
-		{"title": "Resources", "body": "Saved report", "pill": "Saved"}
+		{"title": "System", "body": str(overview_live_data.get("overall_status", active_tab_data.get("overall_status", "Pending"))), "pill": "OK" if overview_live_data.get("system_ok", false) else "Pending"},
+		{"title": "Wi-Fi", "body": str(overview_live_data.get("connected_ssid", "Unknown")), "pill": "Live"},
+		{"title": "Remote Wi-Fi", "body": str(overview_live_data.get("remote_network_state", "planned")), "pill": "Dry"},
+		{"title": "Remote", "body": str(overview_live_data.get("remote_connected", "unknown")), "pill": "Later"},
+		{"title": "CPU Temp", "body": str(overview_live_data.get("cpu_temperature_c", "Unknown")) + " C", "pill": "Live"},
+		{"title": "CPU Use", "body": str(overview_live_data.get("cpu_usage_percent", "Pending")) + "%", "pill": "Live"},
+		{"title": "RAM", "body": str(overview_live_data.get("ram_usage_percent", "Unknown")) + "%", "pill": "Live"},
+		{"title": "GPU", "body": gpu_body, "pill": "No"},
+		{"title": "Speaker", "body": str(overview_live_data.get("speaker_status", "Pending")), "pill": "Live"},
+		{"title": "Camera", "body": "Ready" if bool(overview_live_data.get("camera_ready", false)) else "Unknown", "pill": "Live"}
 	]
 	for index in range(cards.size()):
-		var rect: Rect2 = Rect2(48.0 + float(index % 2) * 274.0, 204.0 + float(int(index / 2)) * 70.0 - offset_y, 250.0, 54.0)
+		var rect: Rect2 = Rect2(48.0 + float(index % 2) * 272.0, 194.0 + float(int(index / 2)) * 50.0 - offset_y, 250.0, 42.0)
 		var item: Dictionary = cards[index] as Dictionary
 		if not _rect_visible(rect, view_rect):
 			continue
-		_draw_card_if_visible(rect, view_rect, Color(0.085, 0.095, 0.115, 0.96), 22.0)
-		_draw_text_if_visible(str(item["title"]), rect.position + Vector2(14, 22), view_rect, 15, ThemeScript.TEXT)
-		_draw_text_if_visible(str(item["body"]), rect.position + Vector2(14, 42), view_rect, 11, ThemeScript.TEXT_MUTED)
-		_draw_pill(Rect2(rect.position.x + 174.0, rect.position.y + 14.0, 58.0, 24.0), Color(0.08, 0.13, 0.11, 0.92), item["pill"] == "OK")
-		_draw_centered_text(str(item["pill"]), rect.position.x + 203.0, rect.position.y + 31.0, 11, ThemeScript.OK if item["pill"] == "OK" else ThemeScript.TEXT_MUTED)
+		_draw_card_if_visible(rect, view_rect, Color(0.085, 0.095, 0.115, 0.96), 18.0)
+		_draw_text_if_visible(str(item["title"]), rect.position + Vector2(12, 18), view_rect, 12, ThemeScript.TEXT)
+		_draw_text_if_visible(str(item["body"]), rect.position + Vector2(12, 34), view_rect, 10, ThemeScript.TEXT_MUTED)
+		_draw_pill(Rect2(rect.position.x + 180.0, rect.position.y + 10.0, 54.0, 22.0), Color(0.08, 0.13, 0.11, 0.92), item["pill"] == "OK")
+		_draw_centered_text(str(item["pill"]), rect.position.x + 207.0, rect.position.y + 26.0, 10, ThemeScript.OK if item["pill"] == "OK" else ThemeScript.TEXT_MUTED)
 
 func _draw_process_rows(offset_y: float, view_rect: Rect2) -> void:
 	var y := 208.0 - offset_y
@@ -571,30 +983,114 @@ func _draw_process_rows(offset_y: float, view_rect: Rect2) -> void:
 	_draw_text_if_visible("CPU", Vector2(430, y), view_rect, 11, ThemeScript.TEXT_DIM)
 	_draw_text_if_visible("RAM", Vector2(506, y), view_rect, 11, ThemeScript.TEXT_DIM)
 	y += 18.0
-	for raw_row in diagnostics_data.sample_process_rows():
+	var rows_raw = active_tab_data.get("processes", diagnostics_data.sample_process_rows())
+	var rows: Array = diagnostics_data.sample_process_rows()
+	if rows_raw is Array:
+		rows = rows_raw
+	for raw_row in rows:
 		var row: Dictionary = raw_row as Dictionary
 		var row_rect: Rect2 = Rect2(48, y - 14.0, 544, 32)
 		_draw_card_if_visible(row_rect, view_rect, Color(0.075, 0.085, 0.102, 0.94), 16.0)
-		_draw_text_if_visible(str(row["name"]), Vector2(62, y + 7.0), view_rect, 12, ThemeScript.TEXT)
-		_draw_text_if_visible(str(row["status"]), Vector2(328, y + 7.0), view_rect, 11, ThemeScript.TEXT_MUTED)
-		_draw_text_if_visible(str(row["cpu"]) + "%", Vector2(430, y + 7.0), view_rect, 11, ThemeScript.TEXT_MUTED)
-		_draw_text_if_visible(str(row["ram"]) + " MB", Vector2(506, y + 7.0), view_rect, 11, ThemeScript.TEXT_MUTED)
+		_draw_text_if_visible(str(row.get("display_name", row.get("name", "Service"))), Vector2(62, y + 7.0), view_rect, 12, ThemeScript.TEXT)
+		_draw_text_if_visible(str(row.get("status", "Pending")), Vector2(328, y + 7.0), view_rect, 11, ThemeScript.TEXT_MUTED)
+		_draw_text_if_visible(str(row.get("cpu_percent", row.get("cpu", "--"))) + "%", Vector2(430, y + 7.0), view_rect, 11, ThemeScript.TEXT_MUTED)
+		_draw_text_if_visible(str(row.get("memory_rss_mb", row.get("ram", "--"))) + " MB", Vector2(506, y + 7.0), view_rect, 11, ThemeScript.TEXT_MUTED)
 		y += 36.0
 
 func _draw_benchmark_rows(offset_y: float, view_rect: Rect2) -> void:
 	var top_card: Rect2 = Rect2(50, 206 - offset_y, 540, 54)
 	_draw_card_if_visible(top_card, view_rect, Color(0.085, 0.095, 0.115, 0.96), 22.0)
-	_draw_text_if_visible("Slowest check", Vector2(66, 228 - offset_y), view_rect, 16, ThemeScript.TEXT)
-	_draw_text_if_visible("No saved report", Vector2(66, 248 - offset_y), view_rect, 12, ThemeScript.TEXT_MUTED)
-	var checks: Array = ["Pi health", "Speaker", "Camera", "System", "Panel data"]
-	for index in range(checks.size()):
-		_draw_info_row(54, 292 + index * 28 - offset_y, str(checks[index]), "Waiting", "Pending", view_rect)
+	_draw_text_if_visible("Benchmark status", Vector2(66, 228 - offset_y), view_rect, 16, ThemeScript.TEXT)
+	_draw_text_if_visible(str(active_tab_data.get("status", "idle")), Vector2(66, 248 - offset_y), view_rect, 12, ThemeScript.TEXT_MUTED)
+	_draw_button(Rect2(416, 154, 154, 34), "Run benchmark", false)
+	var result_raw = active_tab_data.get("result", {})
+	var result: Dictionary = {}
+	if result_raw is Dictionary:
+		result = result_raw
+	var rows_raw = result.get("results", [])
+	var rows: Array = []
+	if rows_raw is Array:
+		rows = rows_raw
+	if rows.is_empty():
+		var state: String = str(active_tab_data.get("status", "idle"))
+		_draw_info_row(54, 292 - offset_y, "Benchmarks", "Running..." if state in ["pending", "running"] else "Not run yet", state, view_rect)
+	else:
+		for index in range(rows.size()):
+			var item: Dictionary = rows[index] as Dictionary
+			_draw_info_row(54, 292 + index * 34 - offset_y, str(item.get("name", "Check")), str(item.get("duration_ms", "0")) + " ms", str(item.get("status", "ok")), view_rect)
 
 func _draw_network_rows(offset_y: float, view_rect: Rect2) -> void:
-	_draw_info_row(54, 224 - offset_y, "Home Wi-Fi", "Planned", "Planned", view_rect)
-	_draw_info_row(54, 260 - offset_y, "NeXa Remote", "Planned", "Planned", view_rect)
-	_draw_info_row(54, 296 - offset_y, "Remote status", "No fake live data", "Waiting", view_rect)
-	_draw_info_row(54, 332 - offset_y, "Two Wi-Fi", "Future", "Later", view_rect)
+	_draw_info_row(54, 224 - offset_y, "Wi-Fi", str(active_tab_data.get("connected_ssid", "Unknown")), "Live", view_rect)
+	_draw_info_row(54, 260 - offset_y, "Enabled", str(active_tab_data.get("wifi_enabled", "Unknown")), "Live", view_rect)
+	_draw_info_row(54, 296 - offset_y, "Remote Wi-Fi", str(active_tab_data.get("remote_network_state", "planned")), "Dry", view_rect)
+	_draw_info_row(54, 332 - offset_y, "Remote", str(active_tab_data.get("remote_connected", active_tab_data.get("pilot_connected", "unknown"))), "Later", view_rect)
+	_draw_text_if_visible("Saved networks", Vector2(58, 380 - offset_y), view_rect, 13, ThemeScript.TEXT)
+	var saved_raw = active_tab_data.get("saved_networks", [])
+	var saved: Array = []
+	if saved_raw is Array:
+		saved = saved_raw
+	if saved.is_empty():
+		_draw_info_row(54, 418 - offset_y, "Saved", "No saved networks", "Dry", view_rect)
+	else:
+		for index in range(mini(saved.size(), 3)):
+			_draw_info_row(54, 418 + index * 34 - offset_y, "Saved", str(saved[index]), "Dry", view_rect)
+	_draw_text_if_visible("Available networks", Vector2(58, 540 - offset_y), view_rect, 13, ThemeScript.TEXT)
+	var available_raw = active_tab_data.get("available_networks", [])
+	var available: Array = []
+	if available_raw is Array:
+		available = available_raw
+	if available.is_empty():
+		_draw_info_row(54, 578 - offset_y, "Available", "No available networks", "Dry", view_rect)
+	else:
+		for index in range(mini(available.size(), 4)):
+			_draw_info_row(54, 578 + index * 34 - offset_y, "Available", str(available[index]), "Dry", view_rect)
+	_draw_info_row(54, 730 - offset_y, "Connect", "planned only", "Dry", view_rect)
+
+func _draw_camera_rows(offset_y: float, view_rect: Rect2) -> void:
+	var preview: Rect2 = Rect2(44, 196 - offset_y, 270, 160)
+	_draw_card_if_visible(preview, view_rect, Color(0.045, 0.052, 0.064, 1.0), 22.0)
+	if camera_frame_texture != null and _rect_visible(preview, view_rect):
+		draw_texture_rect(camera_frame_texture, Rect2(preview.position + Vector2(10, 10), preview.size - Vector2(20, 20)), false)
+	else:
+		_draw_text_if_visible("Preview", preview.position + Vector2(18, 58), view_rect, 16, ThemeScript.TEXT)
+		_draw_text_if_visible(camera_preview_status, preview.position + Vector2(18, 88), view_rect, 12, ThemeScript.TEXT_MUTED)
+	_draw_info_row_compact(330, 208 - offset_y, 248, "Detected", str(active_tab_data.get("camera_detected", "Unknown")), "Live", view_rect)
+	_draw_info_row_compact(330, 244 - offset_y, 248, "Ready", str(active_tab_data.get("camera_ready", "Unknown")), "Live", view_rect)
+	_draw_info_row_compact(330, 280 - offset_y, 248, "Name", str(active_tab_data.get("camera_name", "Unknown")), "Live", view_rect)
+	var preview_button: Rect2 = Rect2(350, 316 - offset_y, 190, 34)
+	var run_button: Rect2 = Rect2(350, 356 - offset_y, 190, 34)
+	if _rect_visible(preview_button, view_rect):
+		_draw_button(preview_button, "Preview On" if camera_preview_on else "Preview Off", camera_preview_on)
+	if _rect_visible(run_button, view_rect):
+		_draw_button(run_button, "Run camera", false)
+
+func _draw_audio_rows(offset_y: float, view_rect: Rect2) -> void:
+	_draw_button(Rect2(416, 154, 154, 34), "Run audio", false)
+	_draw_info_row(54, 224 - offset_y, "Speaker", str(active_tab_data.get("speaker_status", "Unknown")), "Live", view_rect)
+	_draw_info_row(54, 260 - offset_y, "Name", str(active_tab_data.get("speaker_name", "Unknown")), "Live", view_rect)
+	_draw_info_row(54, 296 - offset_y, "Volume", str(active_tab_data.get("volume_percent", "Unknown")), "Live", view_rect)
+	_draw_info_row(54, 332 - offset_y, "Muted", str(active_tab_data.get("muted", "Unknown")), "Live", view_rect)
+
+func _draw_reports_rows(offset_y: float, view_rect: Rect2) -> void:
+	_draw_button(Rect2(416, 154, 154, 34), "Generate", false)
+	var rows_raw = active_tab_data.get("reports", [])
+	var rows: Array = []
+	if rows_raw is Array:
+		rows = rows_raw
+	if rows.is_empty():
+		_draw_info_row(54, 224 - offset_y, "Reports", "No report", str(active_tab_data.get("status", "idle")), view_rect)
+	for index in range(rows.size()):
+		var item: Dictionary = rows[index] as Dictionary
+		_draw_info_row(54, 224 + index * 34 - offset_y, str(item.get("name", "Report")), str(item.get("size_bytes", "")), "Saved", view_rect)
+
+func _draw_logs_rows(offset_y: float, view_rect: Rect2) -> void:
+	_draw_button(Rect2(416, 154, 154, 34), "Refresh logs", false)
+	var rows_raw = active_tab_data.get("lines", ["No logs yet"])
+	var rows: Array = ["No logs yet"]
+	if rows_raw is Array:
+		rows = rows_raw
+	for index in range(rows.size()):
+		_draw_text_if_visible(str(rows[index]), Vector2(54, 214 + index * 18 - offset_y), view_rect, 11, ThemeScript.TEXT_MUTED)
 
 func _draw_info_row(x: float, y: float, title: String, subtitle: String, status: String, view_rect: Rect2) -> void:
 	var row_rect: Rect2 = Rect2(x - 6.0, y - 22.0, 540.0, 32.0)
@@ -605,6 +1101,20 @@ func _draw_info_row(x: float, y: float, title: String, subtitle: String, status:
 	_draw_text_if_visible(subtitle, Vector2(x + 186.0, y), view_rect, 11, ThemeScript.TEXT_MUTED)
 	_draw_pill(Rect2(x + 444.0, y - 17.0, 72.0, 22.0), Color(0.10, 0.105, 0.12, 0.92), false)
 	_draw_centered_text(status, x + 480.0, y, 11, ThemeScript.TEXT_MUTED)
+
+func _draw_info_row_compact(x: float, y: float, width: float, title: String, subtitle: String, status: String, view_rect: Rect2) -> void:
+	var row_rect: Rect2 = Rect2(x, y - 22.0, width, 30.0)
+	if not _rect_visible(row_rect, view_rect):
+		return
+	_draw_card_if_visible(row_rect, view_rect, Color(0.075, 0.085, 0.102, 0.94), 15.0)
+	_draw_text_if_visible(title, Vector2(x + 10.0, y - 2.0), view_rect, 11, ThemeScript.TEXT)
+	_draw_text_if_visible(subtitle, Vector2(x + 82.0, y - 2.0), view_rect, 10, ThemeScript.TEXT_MUTED)
+	_draw_pill(Rect2(x + width - 58.0, y - 17.0, 48.0, 20.0), Color(0.10, 0.105, 0.12, 0.92), false)
+	_draw_centered_text(status, x + width - 34.0, y - 2.0, 9, ThemeScript.TEXT_MUTED)
+
+func _draw_button(rect: Rect2, label: String, active: bool) -> void:
+	_draw_tile(rect, active)
+	_draw_centered_text(label, rect.position.x + rect.size.x * 0.5, rect.position.y + 22.0, 11, ThemeScript.TEXT)
 
 func _draw_placeholder(title: String) -> void:
 	_draw_soft_panel(Rect2(76, 158, 488, 156), 32.0)

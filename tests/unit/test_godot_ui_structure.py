@@ -23,6 +23,7 @@ class GodotUiStructureTests(unittest.TestCase):
             "navigation_controller.gd",
             "face_renderer.gd",
             "diagnostics_data.gd",
+            "diagnostics_api_client.gd",
         ]:
             self.assertTrue((GODOT_DIR / "scripts" / script_name).exists(), script_name)
 
@@ -32,6 +33,8 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("viewport_height=480", project)
         self.assertIn("resizable=false", project)
         self.assertIn("run/max_fps=30", project)
+        self.assertIn('renderer/rendering_method="gl_compatibility"', project)
+        self.assertIn('renderer/rendering_method.mobile="gl_compatibility"', project)
 
     def test_fullscreen_is_not_default_for_this_sprint(self):
         project = self.read(GODOT_DIR / "project.godot").lower()
@@ -41,8 +44,16 @@ class GodotUiStructureTests(unittest.TestCase):
         launcher = self.read(REPO_ROOT / "scripts/run/run_godot_ui_dev.sh")
         self.assertIn("--windowed", launcher)
         self.assertIn("--resolution 640x480", launcher)
+        self.assertIn("--rendering-driver", launcher)
+        self.assertIn("opengl3", launcher)
         self.assertNotIn("--fullscreen", launcher)
         self.assertIn("nexa_godot_lcd_ui", launcher)
+
+    def test_api_launcher_preserves_opengl_renderer(self):
+        launcher = self.read(REPO_ROOT / "scripts/run/run_godot_ui_with_api_dev.sh")
+        self.assertIn("NEXA_GODOT_RENDERING_DRIVER", launcher)
+        self.assertIn("opengl3", launcher)
+        self.assertIn("Compatibility/OpenGL", launcher)
 
     def test_lcd_launcher_exists_as_placeholder(self):
         launcher = self.read(REPO_ROOT / "scripts/run/run_godot_ui_lcd.sh")
@@ -102,6 +113,52 @@ class GodotUiStructureTests(unittest.TestCase):
         ]:
             self.assertNotIn(bad_call, main)
 
+    def test_diagnostics_api_files_and_localhost_binding_are_represented(self):
+        root = REPO_ROOT
+        self.assertTrue((root / "scripts/run/run_diagnostics_api.py").exists())
+        live_api = self.read(root / "system/services/diagnostics/live_api.py")
+        self.assertIn("127.0.0.1", live_api)
+        self.assertIn("8769", live_api)
+
+    def test_godot_api_client_and_lazy_polling_are_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        client = self.read(GODOT_DIR / "scripts/diagnostics_api_client.gd")
+        self.assertNotIn("OS.execute", main)
+        self.assertIn("api_offline", client)
+        self.assertIn("API offline", main)
+        self.assertIn("_update_api_polling", main)
+        self.assertIn("_request_active_diagnostics_tab", main)
+        self.assertIn("/api/control-center", main)
+
+    def test_live_api_endpoints_and_safe_actions_are_represented(self):
+        live_api = self.read(REPO_ROOT / "system/services/diagnostics/live_api.py")
+        for endpoint in [
+            "/api/camera/preview/start",
+            "/api/camera/preview/stop",
+            "/api/benchmarks/run",
+            "/api/reports/generate",
+            "/api/control/remote-network",
+        ]:
+            self.assertIn(endpoint, live_api)
+        self.assertIn("dry_run", live_api)
+        self.assertTrue((REPO_ROOT / "system/services/diagnostics/camera_preview.py").exists())
+        preview = self.read(REPO_ROOT / "system/services/diagnostics/camera_preview.py")
+        self.assertIn("class CameraPreviewWorker", preview)
+        self.assertIn('importlib.import_module("picamera2")', preview)
+        self.assertIn("preview_thread", preview)
+        self.assertIn("rpicam-vid", preview)
+        self.assertIn("rpicam_vid_mjpeg", preview)
+        self.assertIn("JPEG_SOI", preview)
+        self.assertIn("JPEG_EOI", preview)
+        self.assertIn("subprocess.Popen", preview)
+        self.assertIn("_terminate_process", preview)
+        self.assertIn("stale_timeout_seconds", preview)
+        self.assertNotIn("rpicam-still", preview)
+
+    def test_active_card_full_blue_style_is_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        self.assertIn("Color(0.11, 0.32, 0.66, 1.0)", main)
+
     def test_no_rect2_translated_usage_remains(self):
         text = "\n".join(
             self.read(path)
@@ -131,6 +188,33 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("Control Center", main)
         self.assertIn("var controls: Array", main)
         self.assertIn("_draw_notification", main)
+        self.assertIn("CONTROL_CENTER_SAFE_MODE := true", main)
+        self.assertIn("_draw_control_center_safe", main)
+        open_func = main.split("func _open_control_center", 1)[1].split("func _open_diagnostics", 1)[0]
+        self.assertNotIn('api.request_get("/api/control-center")', open_func)
+        self.assertNotIn('api.request_get("/api/network")', open_func)
+        self.assertIn("control_center_refresh_pending", open_func)
+        self.assertIn("network_detail_data", main)
+        self.assertIn("_draw_wifi_detail_safe", main)
+        self.assertIn('selected_control_detail = "wifi"', main)
+        self.assertIn('api.request_get("/api/network")', main)
+        self.assertIn("brightness_slider_rect", main)
+        self.assertIn("sound_slider_rect", main)
+
+    def test_benchmark_and_camera_layout_are_runtime_safe(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        self.assertIn('result_raw = active_tab_data.get("result", {})', main)
+        self.assertIn("if result_raw is Dictionary", main)
+        self.assertIn("if rows_raw is Array", main)
+        self.assertNotIn('var result: Dictionary = active_tab_data.get("result", {})', main)
+        self.assertNotIn('"Pilot"', main)
+        self.assertIn("Remote Wi-Fi", main)
+        self.assertIn("194.0 + float(int(index / 2)) * 50.0", main)
+        self.assertIn("250.0, 42.0", main)
+        self.assertIn("Rect2(44, 196 - offset_y, 270, 160)", main)
+        self.assertIn("Rect2(350, 316 - offset_y, 190, 34)", main)
+        self.assertIn("_draw_info_row_compact", main)
+        self.assertIn("_stop_camera_preview", main)
 
     def test_face_uses_vertical_eyes_without_strong_glow(self):
         face = self.read(GODOT_DIR / "scripts/face_renderer.gd")

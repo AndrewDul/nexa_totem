@@ -16,6 +16,7 @@ REQUIRED_SCRIPTS = [
     "navigation_controller.gd",
     "face_renderer.gd",
     "diagnostics_data.gd",
+    "diagnostics_api_client.gd",
 ]
 
 SCREEN_NAMES = [
@@ -57,12 +58,22 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     main_scene = project / "scenes/Main.tscn"
     scripts_dir = project / "scripts"
     run_dev = REPO_ROOT / "scripts/run/run_godot_ui_dev.sh"
+    run_with_api = REPO_ROOT / "scripts/run/run_godot_ui_with_api_dev.sh"
     run_lcd = REPO_ROOT / "scripts/run/run_godot_ui_lcd.sh"
+    run_api = REPO_ROOT / "scripts/run/run_diagnostics_api.py"
+    live_api = REPO_ROOT / "system/services/diagnostics/live_api.py"
+    camera_preview = REPO_ROOT / "system/services/diagnostics/camera_preview.py"
+    api_client = scripts_dir / "diagnostics_api_client.gd"
 
     project_text = read_text(project_godot)
     main_text = read_text(scripts_dir / "main.gd")
     face_text = read_text(scripts_dir / "face_renderer.gd")
     gesture_text = read_text(scripts_dir / "gesture_detector.gd")
+    api_client_text = read_text(api_client)
+    live_api_text = read_text(live_api)
+    camera_preview_text = read_text(camera_preview)
+    live_collectors_text = read_text(REPO_ROOT / "system/services/diagnostics/live_collectors.py")
+    job_runner_text = read_text(REPO_ROOT / "system/services/diagnostics/job_runner.py")
     all_text = project_text + "\n" + read_text(main_scene)
     scripts_text = ""
     for script_name in REQUIRED_SCRIPTS:
@@ -80,9 +91,18 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("resolution_height", "viewport_height=480" in project_text, "Viewport height is 480.")
     add("not_resizable", "resizable=false" in project_text, "Window is marked not resizable.")
     add("max_fps_30", "run/max_fps=30" in project_text or "application/run/max_fps=30" in project_text, "Project caps runtime at 30 FPS.")
+    add("renderer_gl_compatibility", 'renderer/rendering_method="gl_compatibility"' in project_text, "Project uses Godot Compatibility renderer.")
+    add("renderer_gl_compatibility_mobile", 'renderer/rendering_method.mobile="gl_compatibility"' in project_text, "Project mobile rendering method uses Compatibility renderer.")
     add("not_fullscreen_default", "fullscreen=true" not in project_text.lower(), "Fullscreen is not configured by default.")
     add("windowed_intent", "--windowed" in read_text(run_dev), "Development launcher uses windowed mode.")
     add("fixed_resolution_intent", "--resolution 640x480" in read_text(run_dev), "Development launcher uses 640x480.")
+    add("dev_runner_rendering_driver", "--rendering-driver" in read_text(run_dev) and "opengl3" in read_text(run_dev), "Development launcher defaults to OpenGL rendering driver.")
+    add("api_runner_rendering_driver", "--rendering-driver" in read_text(run_with_api) or "NEXA_GODOT_RENDERING_DRIVER" in read_text(run_with_api), "API development launcher preserves OpenGL rendering driver.")
+    add("diagnostics_api_client_exists", api_client.exists(), "Godot diagnostics API client exists.")
+    add("run_diagnostics_api_exists", run_api.exists(), "Diagnostics API runner exists.")
+    add("live_api_exists", live_api.exists(), "Diagnostics live API exists.")
+    add("camera_preview_exists", camera_preview.exists(), "Camera live preview worker exists.")
+    add("api_localhost", "127.0.0.1" in live_api_text and "8769" in live_api_text, "API binds localhost port 8769.")
 
     for screen_name in SCREEN_NAMES:
         add(f"screen_{screen_name}", screen_name in all_text, f"{screen_name} is represented.")
@@ -90,8 +110,42 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
         add(f"tab_{tab_name}", tab_name in all_text, f"{tab_name} tab is represented.")
 
     add("no_rect2_translated", ".translated(" not in scripts_text, "Godot scripts do not use Rect2.translated.")
+    add("godot_no_os_execute", "OS.execute" not in scripts_text, "Godot does not execute shell commands.")
     add("local_runtime_helpers", "func _draw_card" in main_text and "func _draw_pill" in main_text and "func _draw_soft_panel" in main_text and "func _draw_tile" in main_text, "Local callable drawing helpers exist in main.gd.")
     add("no_themescript_runtime_helper_calls", "ThemeScript.draw_card" not in main_text and "ThemeScript.draw_pill" not in main_text and "ThemeScript.draw_soft_panel" not in main_text and "ThemeScript.draw_tile" not in main_text, "main.gd no longer calls ThemeScript drawing helpers at runtime.")
+    add("api_offline_handling", "api_offline" in api_client_text and "API offline" in main_text, "Godot has API offline handling.")
+    add("lazy_polling", "_update_api_polling" in main_text and "_request_active_diagnostics_tab" in main_text, "Godot has lazy active-tab polling markers.")
+    add("control_center_light_endpoint", "/api/control-center" in main_text, "Control Center uses the lightweight control-center endpoint.")
+    add("control_center_delayed_refresh", "control_center_refresh_pending" in main_text and "after transition" in main_text, "Control Center refresh is delayed until after transition.")
+    add("control_center_cached_first", "cached data first" in main_text and "api.request_get(\"/api/control-center\")" not in main_text.split("func _open_control_center", 1)[1].split("func _open_diagnostics", 1)[0], "Control Center opens from cached/local defaults.")
+    add("control_center_wifi_detail", "network_detail_data" in main_text and "_draw_wifi_detail_safe" in main_text and 'selected_control_detail = "wifi"' in main_text, "Control Center Wi-Fi detail panel is represented.")
+    add("control_center_network_lazy", 'api.request_get("/api/network")' in main_text and 'api.request_get("/api/network")' not in main_text.split("func _open_control_center", 1)[1].split("func _open_diagnostics", 1)[0], "Control Center requests network details outside the open transition.")
+    add("control_center_no_full_network_scan", "saved_networks" not in live_collectors_text.split("def control_center_data", 1)[1], "Control Center data avoids full saved/available Wi-Fi lists.")
+    add("brightness_slider_drag", "brightness_slider_rect" in main_text and "slider_drag_kind == \"brightness\"" in main_text, "Brightness slider hit and drag logic exists.")
+    add("sound_slider_drag", "sound_slider_rect" in main_text and "slider_drag_kind == \"sound\"" in main_text, "Sound slider hit and drag logic exists.")
+    add("sound_no_raw_null_display", '"Sound", "value": str(sound_percent)' in main_text and 'str(control_center_data.get("sound_percent", "Unknown"))' not in main_text, "Sound tile does not display raw null.")
+    add("overview_cpu_gpu", "CPU Use" in main_text and "gpu_usage_status" in live_collectors_text and "gpu_usage_percent" in live_collectors_text, "Overview includes CPU usage and GPU status.")
+    add("benchmark_safe_dictionary", "result_raw = active_tab_data.get(\"result\", {})" in main_text and "if result_raw is Dictionary" in main_text, "Benchmark result dictionary handles null safely.")
+    add("api_arrays_safe", "if rows_raw is Array" in main_text and "if saved_raw is Array" in main_text and "if available_raw is Array" in main_text, "API-derived arrays handle null safely.")
+    add("camera_preview_endpoints", "/api/camera/preview/start" in live_api_text and "/api/camera/preview/stop" in live_api_text and "/api/camera/preview/status" in live_api_text, "Camera preview endpoints exist.")
+    add("camera_frame_handling", "request_frame" in api_client_text and "_on_camera_frame_received" in main_text and "camera_preview_status" in main_text, "Camera preview frame/status handling exists.")
+    add("camera_preview_stop", "_stop_camera_preview" in main_text and "stale_timeout_seconds" in camera_preview_text, "Camera preview stops on close/off or backend stale timeout.")
+    add("no_pilot_label", '"Pilot"' not in main_text, "Pilot label is not visible in Godot UI.")
+    add("remote_labels", "Remote Wi-Fi" in main_text and '"Remote"' in main_text, "Remote Wi-Fi and Remote labels are represented.")
+    add("overview_compact_layout", "204.0 + float(int(index / 2)) * 70.0" not in main_text and "194.0 + float(int(index / 2)) * 50.0" in main_text and "250.0, 42.0" in main_text, "Overview uses compact cards inside Diagnostics panel.")
+    add("camera_compact_rows", "_draw_info_row_compact" in main_text and "width: float" in main_text and "x + width" in main_text, "Camera tab uses compact right-column rows.")
+    add("camera_buttons_compact", "Rect2(350, 316 - offset_y, 190, 34)" in main_text and "Rect2(350, 356 - offset_y, 190, 34)" in main_text, "Camera buttons stay inside the content panel.")
+    add("camera_live_worker", "class CameraPreviewWorker" in camera_preview_text and "preview_thread" in camera_preview_text and "Picamera2" in camera_preview_text, "Camera preview uses a live worker/session.")
+    add("rpicam_vid_mjpeg", "rpicam-vid" in camera_preview_text and "rpicam_vid_mjpeg" in camera_preview_text and "subprocess.Popen" in camera_preview_text, "Camera preview prefers persistent rpicam-vid MJPEG worker.")
+    add("jpeg_marker_parsing", "JPEG_SOI" in camera_preview_text and "JPEG_EOI" in camera_preview_text and "extract_jpeg_frames" in camera_preview_text, "Camera preview parses JPEG SOI/EOI markers.")
+    add("picamera2_guarded", "importlib.import_module(\"picamera2\")" in camera_preview_text and "except Exception" in camera_preview_text, "Picamera2 import is guarded.")
+    add("no_repeated_still_preview", "rpicam-still" not in camera_preview_text and "select_capture_command" not in live_api_text, "Preview does not use repeated rpicam-still captures.")
+    add("camera_layout_fixed", "Rect2(44, 196 - offset_y, 270, 160)" in main_text and "Rect2(350, 316 - offset_y, 190, 34)" in main_text, "Camera tab uses fixed preview and right action column.")
+    add("network_lists", "saved_networks" in live_collectors_text and "available_networks" in live_collectors_text and "actions_are_dry_run" in live_collectors_text and "remote_connected" in live_collectors_text, "Network endpoint returns saved and available networks plus remote state.")
+    add("benchmark_result_rows", '"results": rows' in job_runner_text and "duration_ms" in job_runner_text and "result.get(\"results\"" in main_text, "Benchmark job returns visible result rows.")
+    add("benchmark_on_request", "/api/benchmarks/run" in live_api_text and "start_benchmarks" in live_api_text, "Benchmarks run on request only.")
+    add("report_on_request", "/api/reports/generate" in live_api_text and "start_report" in live_api_text, "Reports generate on request only.")
+    add("active_full_blue", "Color(0.11, 0.32, 0.66, 1.0)" in main_text, "Active/pressed cards use full-blue styling.")
     add("rounded_style_helpers", "draw_card" in all_text and "draw_pill" in all_text and "draw_tile" in all_text, "Rounded card, pill, and tile helpers exist.")
     add("menu_tile_cards", "_draw_tile(rect" in main_text and "MENU_TILES" in main_text, "Menu tile card drawing is represented.")
     add("menu_tile_width", "284.0" in main_text, "Menu tile width 284 is represented.")
@@ -100,6 +154,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     for subtitle in ["Clock", "Focus", "Alerts", "Events", "To-do", "Play", "System", "Setup"]:
         add(f"menu_subtitle_{subtitle}", f'"subtitle": "{subtitle}"' in main_text, f"Menu subtitle {subtitle} is represented.")
     add("control_center_cards", "Control Center" in main_text and "var controls: Array" in main_text and "_draw_notification" in main_text, "Control Center card drawing is represented.")
+    add("control_center_safe_mode", "CONTROL_CENTER_SAFE_MODE := true" in main_text and "_draw_control_center_safe" in main_text, "Control Center safe drawing mode exists.")
     add("no_visible_face_home_label", '_draw_text("Face Home"' not in main_text, "Face Home label is not drawn on the home screen.")
     add("vertical_eyes", "_draw_vertical_capsule" in face_text and "_draw_bean_eye" in face_text, "Vertical bean eyes are represented.")
     add("blink_logic", "BLINK_PERIOD" in face_text and "BLINK_DURATION" in face_text and "fmod" in face_text, "Idle blink cycle logic is represented.")
