@@ -701,3 +701,21 @@ I added safe foundations for presence-based Face/Clock behavior and joystick men
 I did not change Raspberry Pi Wi-Fi or hotspot configuration in this sprint, so internet/SSH is safe.
 
 The future hotspot will be a separate sprint.
+
+## 2026-05-27 — Safe NeXa-ToTem Access Point Foundation
+
+I added the safe local access point foundation for ESP8266.
+
+Raspberry Pi can be prepared to create the NeXa-ToTem Wi-Fi network.
+
+ESP8266 will connect directly to NeXa-ToTem and post hardware JSON to `http://10.42.0.1:8080/api/hardware`.
+
+The setup scripts default to dry-run and do not change networking unless explicitly applied.
+
+The safety script warns if `wlan0` appears to be the current internet route.
+
+The hotspot apply step is manual because it can disconnect internet/SSH.
+
+The current sprint does not automatically change Wi-Fi, NetworkManager, routing, DHCP, or hotspot settings.
+
+Internet is optional for the hardware system; ESP8266 only needs the local NeXa-ToTem network.

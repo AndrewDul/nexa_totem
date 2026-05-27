@@ -85,3 +85,20 @@ Preview must stop when:
 
 The preview backend should use one persistent live worker/session while enabled, not repeated still-image process launches.
 
+## NeXa-ToTem AP disconnects Wi-Fi or SSH
+
+Problem:
+After applying the NeXa-ToTem access point profile, the Raspberry Pi may lose normal Wi-Fi internet or SSH.
+
+Cause:
+If `wlan0` was the current internet route, turning it into the NeXa-ToTem access point can disconnect the old Wi-Fi connection.
+
+Fix:
+Use a local monitor/keyboard, Ethernet, USB tethering, or a second Wi-Fi adapter, then run:
+
+`python3 scripts/network/rollback_nexa_ap.py --apply --i-understand-this-changes-network`
+
+Safety rule:
+Do not apply AP mode while relying on `wlan0` SSH unless you know what you are doing.
+
+Prefer Ethernet, USB tethering, or a second Wi-Fi adapter for internet while `wlan0` is used as the NeXa-ToTem AP.

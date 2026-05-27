@@ -32,6 +32,30 @@ Expose it on the LAN only when testing with the ESP8266:
 
 `python3 scripts/run/run_hardware_gateway_dev.py --host 0.0.0.0 --port 8080`
 
-This server does not configure Wi-Fi. Hotspot setup is separate and belongs in a later sprint.
+You can also use:
+
+`bash scripts/run/run_hardware_gateway_lan_dev.sh`
+
+Dry-run the NeXa-ToTem AP setup:
+
+`python3 scripts/network/setup_nexa_ap.py`
+
+Check network safety before applying:
+
+`python3 scripts/network/check_network_safety.py`
+
+Apply the AP later:
+
+`python3 scripts/network/setup_nexa_ap.py --apply --interface wlan0 --i-understand-this-may-disconnect-wifi`
+
+If `wlan0` is the internet route, also add:
+
+`--force-wlan0-ap`
+
+Rollback:
+
+`python3 scripts/network/rollback_nexa_ap.py --apply --i-understand-this-changes-network`
+
+This server does not configure Wi-Fi. Hotspot setup is separate and safety-gated.
 
 Do not put logs, config files, Wi-Fi passwords, or secrets in this folder.

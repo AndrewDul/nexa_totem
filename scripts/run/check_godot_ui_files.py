@@ -73,6 +73,14 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     hardware_readme = hardware_gateway_dir / "README.md"
     hardware_dev_runner = REPO_ROOT / "scripts/run/run_hardware_gateway_dev.py"
     hardware_api_check = REPO_ROOT / "scripts/test/check_hardware_gateway_api.py"
+    network_dir = REPO_ROOT / "system/network"
+    access_point_dir = network_dir / "access_point"
+    ap_profile = access_point_dir / "ap_profile.py"
+    setup_ap = REPO_ROOT / "scripts/network/setup_nexa_ap.py"
+    rollback_ap = REPO_ROOT / "scripts/network/rollback_nexa_ap.py"
+    safety_check = REPO_ROOT / "scripts/network/check_network_safety.py"
+    network_ap_check = REPO_ROOT / "scripts/test/check_network_ap_safety.py"
+    esp8266_config = REPO_ROOT / "hardware/esp8266/nexa_totem_esp8266_config_example.h"
     api_client = scripts_dir / "diagnostics_api_client.gd"
     home_dir = scripts_dir / "home"
     home_messages_dir = home_dir / "messages"
@@ -104,6 +112,12 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     hardware_state_text = read_text(hardware_state)
     hardware_dev_runner_text = read_text(hardware_dev_runner)
     hardware_api_check_text = read_text(hardware_api_check)
+    ap_profile_text = read_text(ap_profile)
+    setup_ap_text = read_text(setup_ap)
+    rollback_ap_text = read_text(rollback_ap)
+    safety_check_text = read_text(safety_check)
+    network_ap_check_text = read_text(network_ap_check)
+    esp8266_config_text = read_text(esp8266_config)
     design_tokens_text = read_text(design_tokens)
     nexa_message_text = read_text(nexa_message)
     message_queue_text = read_text(message_queue)
@@ -151,6 +165,21 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("hardware_state_store", "class HardwareStateStore" in hardware_state_text, "HardwareStateStore exists.")
     add("run_hardware_gateway_dev", hardware_dev_runner.exists(), "Hardware gateway dev runner exists.")
     add("check_hardware_gateway_api", hardware_api_check.exists(), "Hardware gateway API check exists.")
+    add("network_folder", network_dir.exists(), "Network folder exists.")
+    add("access_point_readme", (access_point_dir / "README.md").exists(), "Access point README exists.")
+    add("setup_nexa_ap_script", setup_ap.exists(), "NeXa AP setup script exists.")
+    add("rollback_nexa_ap_script", rollback_ap.exists(), "NeXa AP rollback script exists.")
+    add("network_safety_script", safety_check.exists(), "Network safety check script exists.")
+    add("network_ap_safety_check", network_ap_check.exists(), "Network AP safety check exists.")
+    add("esp8266_config_example", esp8266_config.exists(), "ESP8266 config example exists.")
+    add("network_default_dry_run", "dry_run" in setup_ap_text and "changed_network" in setup_ap_text and "No network changes were made." in setup_ap_text, "AP setup default dry-run is represented.")
+    add("network_explicit_apply_flags", "--apply" in setup_ap_text and "--i-understand-this-may-disconnect-wifi" in setup_ap_text and "--force-wlan0-ap" in setup_ap_text, "AP setup explicit apply flags are represented.")
+    add("network_rollback_represented", "--i-understand-this-changes-network" in rollback_ap_text and "connection delete" in rollback_ap_text and "NeXa-ToTem" in rollback_ap_text, "AP rollback is represented.")
+    add("network_safety_warning", "wlan0 appears to be your current internet route" in safety_check_text and "may disconnect internet/SSH" in safety_check_text, "wlan0 internet safety warning exists.")
+    add("network_ap_values", "NeXa-ToTem" in ap_profile_text and "10.42.0.1" in ap_profile_text and "http://10.42.0.1:8080/api/hardware" in ap_profile_text and "nexa12345" in ap_profile_text, "NeXa-ToTem SSID/IP/URL/password are represented.")
+    add("esp8266_template_values", "NEXA_WIFI_SSID" in esp8266_config_text and "NeXa-ToTem" in esp8266_config_text and "NEXA_PI_SERVER_URL" in esp8266_config_text, "ESP8266 config template values exist.")
+    add("network_safety_check_no_apply", "--apply" not in network_ap_check_text and "changed_network" in network_ap_check_text, "Network AP safety check does not run apply commands.")
+    add("network_docs_warn_disconnect", "may disconnect internet/SSH" in read_text(REPO_ROOT / "system/network/README.md") and "rollback_nexa_ap.py" in read_text(REPO_ROOT / "docs/troubleshooting.md"), "Network docs warn about internet/SSH risk and rollback.")
     add("api_localhost", "127.0.0.1" in live_api_text and "8769" in live_api_text, "API binds localhost port 8769.")
     add("home_system_folder_structure", all(path.exists() for path in [home_dir, home_messages_dir, home_behaviors_dir, system_scripts_dir, system_notifications_dir, assets_dir, icons_dir]), "Home/system/assets folder structure exists.")
     add("home_system_readmes", all((path / "README.md").exists() for path in [home_dir, home_messages_dir, home_behaviors_dir, system_scripts_dir, system_notifications_dir, assets_dir, icons_dir]), "New Home/system/assets folders have README files.")
