@@ -27,6 +27,49 @@ class GodotUiStructureTests(unittest.TestCase):
         ]:
             self.assertTrue((GODOT_DIR / "scripts" / script_name).exists(), script_name)
 
+    def test_home_message_system_files_exist(self):
+        paths = [
+            GODOT_DIR / "scripts/home",
+            GODOT_DIR / "scripts/home/messages",
+            GODOT_DIR / "scripts/home/behaviors",
+            GODOT_DIR / "scripts/system",
+            GODOT_DIR / "scripts/system/notifications",
+            GODOT_DIR / "assets",
+            GODOT_DIR / "assets/icons",
+        ]
+        for path in paths:
+            self.assertTrue(path.exists(), str(path))
+            self.assertTrue((path / "README.md").exists(), str(path / "README.md"))
+        for file_path in [
+            GODOT_DIR / "scripts/system/design_tokens.gd",
+            GODOT_DIR / "scripts/home/messages/nexa_message.gd",
+            GODOT_DIR / "scripts/home/messages/message_queue.gd",
+            GODOT_DIR / "scripts/home/behaviors/home_behavior_registry.gd",
+            GODOT_DIR / "scripts/home/behaviors/face_behavior_state.gd",
+            GODOT_DIR / "scripts/system/notifications/notification_policy.gd",
+            GODOT_DIR / "scripts/system/input_router.gd",
+        ]:
+            self.assertTrue(file_path.exists(), str(file_path))
+
+    def test_home_message_foundation_files_are_represented(self):
+        tokens = self.read(GODOT_DIR / "scripts/system/design_tokens.gd")
+        message = self.read(GODOT_DIR / "scripts/home/messages/nexa_message.gd")
+        queue = self.read(GODOT_DIR / "scripts/home/messages/message_queue.gd")
+        behavior = self.read(GODOT_DIR / "scripts/home/behaviors/home_behavior_registry.gd")
+        policy = self.read(GODOT_DIR / "scripts/system/notifications/notification_policy.gd")
+        router = self.read(GODOT_DIR / "scripts/system/input_router.gd")
+        for term in ["SCREEN_WIDTH := 640", "SCREEN_HEIGHT := 480", "HOME_MESSAGE_TEXT_X := 342", "HOME_MESSAGE_TEXT_W := 264", "HOME_MESSAGE_FACE_IDLE_CENTER_X := 320", "HOME_MESSAGE_FACE_MSG_CENTER_X := 160", "HOME_FACE_OFFSCREEN_LEFT_X := -120", "HOME_FACE_OFFSCREEN_RIGHT_X := 760", "HOME_MESSAGE_AUTO_DISMISS_SECONDS := 4.0", "STARTUP_SEQUENCE_SECONDS := 5.0", "ANIM_FACE_TO_MESSAGE_SECONDS := 0.32", "INACTIVITY_TIMEOUT_SECONDS := 30.0"]:
+            self.assertIn(term, tokens)
+        for term in ["title", "body", "source", "message_type", "priority", "display_policy", "actions", "home_or_indicator", "urgent_interrupt"]:
+            self.assertIn(term, message)
+        for term in ["push_message", "dismiss_active", "peek_next", "pop_next", "list_pending", "critical", "warning", "important", "reminder", "normal", "silent"]:
+            self.assertIn(term, queue)
+        for term in ["startup_greeting", "idle_calm", "notification_soft", "warning_soft", "private_locked", "happy", "calm", "focused", "concerned", "locked", "led_behavior", "sound_cue"]:
+            self.assertIn(term, behavior)
+        self.assertIn("CRITICAL_INTERRUPT_RESERVED", policy)
+        for action in ["nexa_up", "nexa_down", "nexa_left", "nexa_right", "nexa_accept", "nexa_back", "nexa_exit"]:
+            self.assertIn(action, router)
+
     def test_target_resolution_is_configured(self):
         project = self.read(GODOT_DIR / "project.godot")
         self.assertIn("viewport_width=640", project)
@@ -492,9 +535,11 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn('"/api/todo/snooze"', main)
         self.assertIn('"/api/todo/tasks/mark-done"', main)
         global_draw = main.split("func _draw_global_overlays", 1)[1].split("func _draw_transition", 1)[0]
-        self.assertIn("todo_due_modal_open", global_draw)
+        self.assertNotIn("todo_due_modal_open", global_draw)
         tap_func = main.split("func _handle_tap", 1)[1].split("func _handle_menu_tap", 1)[0]
+        self.assertIn('nav.current_screen == "Face Home"', tap_func)
         self.assertIn("todo_due_modal_open", tap_func)
+        self.assertIn("_sync_notification_policy_after_rebuild", main)
         dismiss_func = main.split("func _dismiss_notification", 1)[1].split("func _dismiss_pending_due_notification", 1)[0]
         self.assertIn('/api/todo/dismiss', dismiss_func)
         self.assertNotIn('/api/todo/tasks/delete', dismiss_func)
@@ -547,8 +592,9 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn('"Your current game will be lost."', main)
         global_draw = main.split("func _draw", 1)[1].split("func _draw_global_overlays", 1)[0]
         self.assertIn("_draw_global_overlays()", global_draw)
+        self.assertIn("_draw_top_bar_indicators()", global_draw)
         tap_prefix = main.split("func _handle_tap", 1)[1].split("func _handle_menu_tap", 1)[0]
-        self.assertIn("_handle_due_notification_modal_tap(position)", tap_prefix)
+        self.assertIn("_handle_top_indicator_tap(position)", tap_prefix)
 
     def test_tic_tac_toe_local_logic_is_static_and_deterministic(self):
         main = self.read(GODOT_DIR / "scripts/main.gd")
@@ -568,6 +614,134 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("return int(moves[0])", main)
         for forbidden in ["api.request", "http", "llm", "openai"]:
             self.assertNotIn(forbidden, games_source.lower())
+
+    def test_home_message_mode_indicators_and_inactivity_are_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        self.assertIn("home_message_active", main)
+        self.assertIn("home_message_title", main)
+        self.assertIn("home_message_body", main)
+        self.assertIn("home_message_scroll_y", main)
+        self.assertIn("nexa_message_indicator_count", main)
+        self.assertIn("nexa_messages_data", main)
+        self.assertIn("func _draw_home_message_mode", main)
+        # Final face-LEFT / text-RIGHT layout
+        self.assertIn("HOME_MESSAGE_TEXT_X := 342.0", main)
+        self.assertIn("HOME_MESSAGE_TEXT_W := 264.0", main)
+        self.assertIn("HOME_MESSAGE_FACE_CENTER := Vector2(160.0, 245.0)", main)
+        self.assertIn("HOME_MESSAGE_FACE_IDLE_CENTER := Vector2(320.0, 245.0)", main)
+        self.assertNotIn("HOME_MESSAGE_TEXT_X := 34.0", main)
+        self.assertNotIn("HOME_MESSAGE_FACE_CENTER := Vector2(480.0, 245.0)", main)
+        self.assertIn("face.draw_face_at", main)
+        # Close X on the right side
+        self.assertIn("Rect2(584, 58, 26, 26)", main)
+        # Action buttons on the right side
+        self.assertIn("342.0 + float(index) * 86.0", main)
+        # Swipe-to-dismiss in Messages Center
+        for term in ["messages_swipe_active_id", "messages_swipe_start_x", "messages_swipe_start_y", "messages_swipe_row_index", "func _begin_message_row_swipe", "func _finish_message_row_swipe", "func _dismiss_nexa_message_by_id"]:
+            self.assertIn(term, main)
+        # Enter / exit animation state machine
+        for term in ["home_message_exit_active", "home_message_exit_elapsed", "home_message_exit_seconds", "func _start_home_message_enter", "func _start_home_message_exit", "func _update_home_message_exit_anim", "func _finish_home_message_exit"]:
+            self.assertIn(term, main)
+        # Animation helper functions
+        for term in ["func _home_message_text_y_offset", "func _home_message_text_alpha", "func _home_message_face_center", "func _home_message_face_scale"]:
+            self.assertIn(term, main)
+        # Face transition during screen swipes
+        for term in ["func _home_face_transition_center", "func _draw_face_home_during_transition", "HOME_FACE_OFFSCREEN_LEFT_X", "HOME_FACE_OFFSCREEN_RIGHT_X", "HOME_FACE_OFFSCREEN_DOWN_Y", "HOME_FACE_OFFSCREEN_UP_Y"]:
+            self.assertIn(term, main)
+        home_draw = main.split("func _draw_home_message_mode", 1)[1].split("func _draw_top_bar_indicators", 1)[0]
+        self.assertNotIn("_draw_card", home_draw)
+        self.assertNotIn("bubble", home_draw.lower())
+        self.assertIn("_wrap_text_to_width", main)
+        self.assertIn("lines.size() <= 5", main)
+        self.assertIn("_home_message_max_scroll", main)
+        self.assertIn('_apply_scroll("home_message"', main)
+        self.assertIn("func _draw_messages_center", main)
+        self.assertIn('nav.current_screen = "Messages"', main)
+        self.assertIn('"No messages"', main)
+        for term in [
+            "STARTUP_SEQUENCE_SECONDS := 5.0",
+            "startup_sequence_active",
+            "startup_sequence_elapsed",
+            "func _draw_startup_sequence",
+            "func _update_startup_sequence",
+            "func _finish_startup_sequence",
+            "func _draw_startup_brand",
+            "func _draw_startup_face",
+            '"NeXa"',
+            '"ToTem"',
+            '"DevDul"',
+            "_startup_alpha(0.45, 1.00)",
+            "_startup_alpha(1.15, 0.95)",
+            "_startup_alpha(1.75, 0.95)",
+            "_startup_ease(2.45, 1.75)",
+            "lerpf(590.0, 285.0",
+        ]:
+            self.assertIn(term, main)
+        startup_update = main.split("func _update_startup_sequence", 1)[1].split("func _finish_startup_sequence", 1)[0]
+        self.assertNotIn("api.request", startup_update)
+        for term in ["func _get_user_first_name", "func _get_user_preferred_name", "func _get_startup_greeting_title", 'return "Hello"', '"NeXa is ready."', "_get_startup_greeting_title()"]:
+            self.assertIn(term, main)
+        self.assertNotIn('"Hello, Andrzej."', main)
+        for term in [
+            "HOME_MESSAGE_AUTO_DISMISS_SECONDS := 4.0",
+            "home_message_visible_elapsed",
+            "home_message_auto_dismiss_seconds",
+            "home_message_auto_dismiss_enabled",
+            "func _update_home_message_visible_timer",
+            'nav.current_screen != "Face Home"',
+            "home_message_started_visible = nav.current_screen == \"Face Home\"",
+        ]:
+            self.assertIn(term, main)
+        for term in ["home_message_enter_active", "home_message_enter_elapsed", "home_message_enter_seconds", "func _update_home_message_enter", "func _home_message_enter_y_offset", "func _home_message_enter_alpha", "lerpf(-180.0, 0.0", "color.a *= text_alpha"]:
+            self.assertIn(term, main)
+        for term in ["func _home_message_close_rect", "func _draw_circular_close_button", "func _handle_home_message_close_tap", "_home_message_close_rect().has_point(position)"]:
+            self.assertIn(term, main)
+        close_handler = main.split("func _handle_home_message_close_tap", 1)[1].split("func _activate_home_message_action", 1)[0]
+        self.assertNotIn("delete", close_handler.lower())
+        self.assertIn("func _draw_home_clock", main)
+        self.assertIn("func _home_clock_rect", main)
+        self.assertIn('"%02d:%02d"', main)
+        self.assertIn("Rect2(482, 22, 56, 24)", main)
+        self.assertIn("Rect2(546, 22, 30, 28)", main)
+        self.assertIn("Rect2(584, 22, 30, 28)", main)
+        for term in ["_message_indicator_rect", "_notification_indicator_rect", "_draw_message_indicator", "_draw_notification_indicator", "_handle_top_indicator_tap"]:
+            self.assertIn(term, main)
+        self.assertNotIn("🔔", main)
+        self.assertNotIn("💬", main)
+        self.assertIn("INACTIVITY_TIMEOUT_SECONDS := 30.0", main)
+        self.assertIn('INACTIVITY_EXEMPT_SCREENS := ["Games"]', main)
+        self.assertIn("func _update_inactivity", main)
+        self.assertIn("func _reset_user_activity", main)
+        inactivity = main.split("func _update_inactivity", 1)[1].split("func _reset_user_activity", 1)[0]
+        self.assertIn("text_input_open", inactivity)
+        self.assertIn("_reset_user_activity()", main)
+
+    def test_home_behaviors_notification_policy_and_break_game_are_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        for term in ["startup_greeting", "soft_idle_blink", "face_blink_active", "face_next_blink_seconds", "_apply_home_behavior", "current_led_behavior", "current_sound_cue"]:
+            self.assertIn(term, main)
+        face_update = main.split("func _update_face_behavior", 1)[1].split("func _update_inactivity", 1)[0]
+        self.assertNotIn("print(", face_update)
+        self.assertIn("_sync_notification_policy_after_rebuild", main)
+        self.assertIn('reminders_due_modal_open = nav.current_screen == "Face Home"', main)
+        self.assertIn('calendar_due_modal_open = nav.current_screen == "Face Home"', main)
+        self.assertIn('todo_due_modal_open = nav.current_screen == "Face Home"', main)
+        self.assertIn("notifications_data = next_notifications", main)
+        self.assertIn("_show_next_home_item_if_available", main)
+        self.assertIn("_next_home_notification_preview", main)
+        self.assertIn("notification_preview_hidden_ids", main)
+        self.assertIn("Private reminder locked", main)
+        for term in [
+            "study_break_game_suggested_for_segment_id",
+            "break_elapsed >= 30",
+            '"Want to play a quick game during your break?"',
+            '"open_games"',
+            '"not_now"',
+            "study_break_game_active",
+            'kind == "focus"',
+            '_open_study("smart_study")',
+        ]:
+            self.assertIn(term, main)
 
     def test_benchmark_and_camera_layout_are_runtime_safe(self):
         main = self.read(GODOT_DIR / "scripts/main.gd")
@@ -602,8 +776,11 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("_handle_pin_tap", main)
         self.assertIn("_settings_update", main)
         self.assertIn("settings_data[section] = section_data", main)
+        for term in ['"title": "User"', '"subtitle": "Profile"', '"First name"', '"Last name"', '"How should NeXa call you?"', '"Save"', '"section": "user"', '"key": "first_name"', '"key": "last_name"', '"key": "preferred_name"', 'target.begins_with("settings_user_")', '"User profile saved."']:
+            self.assertIn(term, main)
         for page in [
             "Appearance",
+            "User",
             "Notifications",
             "Modes",
             "Quick Shelf",

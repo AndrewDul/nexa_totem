@@ -85,6 +85,11 @@ DEFAULT_SETTINGS = {
         "private_notifications_enabled": False,
         "private_reminders_enabled": False,
     },
+    "user": {
+        "first_name": "",
+        "last_name": "",
+        "preferred_name": "",
+    },
     "privacy": {
         "pin_enabled": False,
         "pin_hash": "",
@@ -198,6 +203,8 @@ def update_setting(section, key, value, path=SETTINGS_PATH):
         return {"status": "error", "error": "invalid_color"}
     if section == "appearance" and key == "preset" and value not in PRESET_OPTIONS:
         return {"status": "error", "error": "invalid_preset"}
+    if section == "user":
+        value = _clean_user_profile_value(value)
     settings[section][key] = value
     saved = save_settings(settings, path)
     return {"status": "ok", "settings": safe_settings(saved)}
@@ -219,8 +226,15 @@ def update_many(updates, path=SETTINGS_PATH):
             return {"status": "error", "error": "invalid_color"}
         if section == "appearance" and key == "preset" and value not in PRESET_OPTIONS:
             return {"status": "error", "error": "invalid_preset"}
+        if section == "user" and not isinstance(value, str):
+            return {"status": "error", "error": "invalid_user_value"}
     for item in updates:
-        settings[str(item["section"])][str(item["key"])] = item.get("value")
+        section = str(item["section"])
+        key = str(item["key"])
+        value = item.get("value")
+        if section == "user":
+            value = _clean_user_profile_value(value)
+        settings[section][key] = value
     saved = save_settings(settings, path)
     return {"status": "ok", "settings": safe_settings(saved)}
 
@@ -236,6 +250,12 @@ def reset_section(section, path=SETTINGS_PATH):
 
 def valid_pin(pin):
     return isinstance(pin, str) and len(pin) == 4 and pin.isdigit()
+
+
+def _clean_user_profile_value(value):
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:40]
 
 
 def _hash_pin(pin, salt):

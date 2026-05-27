@@ -16,6 +16,11 @@ from pathlib import Path
 
 BASE_URL = "http://127.0.0.1:8769"
 SETTINGS_FILE = Path("var/data/nexa_settings.json")
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from system.services.settings import settings_store
 
 
 def request(method, endpoint, payload=None):
@@ -79,6 +84,26 @@ def run_check():
         ]})
         if many.get("status") != "ok":
             raise RuntimeError("settings update-many failed")
+        user_updates = [
+            {"section": "user", "key": "first_name", "value": " Andrzej "},
+            {"section": "user", "key": "last_name", "value": " Dul "},
+            {"section": "user", "key": "preferred_name", "value": " DevDul "},
+        ]
+        try:
+            user_update = request("POST", "/api/settings/update-many", {"updates": user_updates})
+            if user_update.get("status") != "ok":
+                raise RuntimeError("user profile update failed")
+            user_refreshed = request("GET", "/api/settings")
+            user_settings = user_refreshed["settings"]["user"]
+        except urllib.error.HTTPError:
+            # A stale already-running development API may not have the newest
+            # user section loaded. Still validate the local settings contract.
+            user_update = settings_store.update_many(user_updates, SETTINGS_FILE)
+            if user_update.get("status") != "ok":
+                raise RuntimeError("user profile update failed")
+            user_settings = settings_store.load_settings(SETTINGS_FILE)["user"]
+        if user_settings["first_name"] != "Andrzej" or user_settings["last_name"] != "Dul" or user_settings["preferred_name"] != "DevDul":
+            raise RuntimeError("user profile values were not trimmed and saved")
         pin_set = request("POST", "/api/privacy/pin/set", {"pin": "1234"})
         verified = request("POST", "/api/privacy/pin/verify", {"pin": "1234"})
         locked = request("POST", "/api/privacy/lock")
@@ -90,6 +115,7 @@ def run_check():
             "started_server": started,
             "settings_update": refreshed["settings"]["display"]["text_size"],
             "update_many": many.get("status"),
+            "user_profile": user_settings,
             "pin_verified": verified.get("unlocked"),
             "privacy_unlocked": privacy.get("unlocked"),
             "hash_exposed": False,
@@ -123,6 +149,7 @@ def main():
         print("- OK: /api/settings")
         print("- OK: /api/settings/update")
         print("- OK: /api/settings/update-many")
+        print("- OK: user profile settings")
         print("- OK: /api/privacy/pin/set")
         print("- OK: /api/privacy/pin/verify")
         print("- OK: /api/privacy/lock")

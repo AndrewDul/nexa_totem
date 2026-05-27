@@ -15,6 +15,9 @@ class SettingsStoreTests(unittest.TestCase):
         self.assertIn("appearance", data)
         self.assertIn("private_notifications_enabled", data["notifications"])
         self.assertIn("private_reminders_enabled", data["notifications"])
+        self.assertEqual(data["user"]["first_name"], "")
+        self.assertEqual(data["user"]["last_name"], "")
+        self.assertEqual(data["user"]["preferred_name"], "")
         for key in [
             "time_color",
             "hour_color",
@@ -93,6 +96,25 @@ class SettingsStoreTests(unittest.TestCase):
             ], path)
         self.assertEqual(payload["status"], "error")
         self.assertEqual(payload["error"], "invalid_color")
+
+    def test_user_profile_values_are_trimmed_and_limited(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "nexa_settings.json"
+            first = settings_store.update_setting("user", "first_name", " Andrzej ", path)
+            many = settings_store.update_many([
+                {"section": "user", "key": "last_name", "value": " Dul "},
+                {"section": "user", "key": "preferred_name", "value": " X" * 50},
+            ], path)
+            bad = settings_store.update_many([
+                {"section": "user", "key": "first_name", "value": 123},
+            ], path)
+            data = settings_store.load_settings(path)
+        self.assertEqual(first["status"], "ok")
+        self.assertEqual(many["status"], "ok")
+        self.assertEqual(bad["status"], "error")
+        self.assertEqual(data["user"]["first_name"], "Andrzej")
+        self.assertEqual(data["user"]["last_name"], "Dul")
+        self.assertLessEqual(len(data["user"]["preferred_name"]), 40)
 
     def test_reset_section_restores_defaults(self):
         with tempfile.TemporaryDirectory() as temp_dir:

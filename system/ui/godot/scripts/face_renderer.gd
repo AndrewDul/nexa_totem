@@ -13,22 +13,25 @@ var expression_state := STATE_IDLE
 
 func draw_face(canvas: CanvasItem, viewport_size: Vector2, elapsed: float, eye_color: Color = Color(0.18, 0.58, 1.0, 1.0), mouth_color: Color = Color(0.18, 0.58, 1.0, 0.95)) -> void:
 	var center := viewport_size * 0.5
+	draw_face_at(canvas, center, 1.0, elapsed, eye_color, mouth_color)
+
+func draw_face_at(canvas: CanvasItem, center: Vector2, scale: float, elapsed: float, eye_color: Color = Color(0.18, 0.58, 1.0, 1.0), mouth_color: Color = Color(0.18, 0.58, 1.0, 0.95)) -> void:
 	var breath := sin(elapsed * 0.72) * 1.0
-	var eye_y := center.y - 58.0 + breath * 3.0
-	var eye_offset := sin(elapsed * 0.32) * 1.4
+	var eye_y := center.y - 58.0 * scale + breath * 3.0 * scale
+	var eye_offset := sin(elapsed * 0.32) * 1.4 * scale
 	var eye_scale := 1.0 + breath * 0.018
 	var blink_amount: float = _blink_amount(elapsed)
-	var eye_height: float = 104.0 * eye_scale * lerpf(1.0, 0.12, blink_amount)
-	var eye_width: float = 36.0 * eye_scale * lerpf(1.0, 1.08, blink_amount)
-	_draw_bean_eye(canvas, Vector2(center.x - 86.0 + eye_offset, eye_y), eye_width, eye_height, eye_color)
-	_draw_bean_eye(canvas, Vector2(center.x + 86.0 + eye_offset, eye_y), eye_width, eye_height, eye_color)
-	var mouth_width := 132.0 + breath * 5.0
-	var mouth_y := center.y + 104.0 + breath * 3.0
+	var eye_height: float = 104.0 * scale * eye_scale * lerpf(1.0, 0.12, blink_amount)
+	var eye_width: float = 36.0 * scale * eye_scale * lerpf(1.0, 1.08, blink_amount)
+	_draw_bean_eye(canvas, Vector2(center.x - 86.0 * scale + eye_offset, eye_y), eye_width, eye_height, eye_color)
+	_draw_bean_eye(canvas, Vector2(center.x + 86.0 * scale + eye_offset, eye_y), eye_width, eye_height, eye_color)
+	var mouth_width := (132.0 + breath * 5.0) * scale
+	var mouth_y := center.y + 104.0 * scale + breath * 3.0 * scale
 	var mouth_start := Vector2(center.x - mouth_width * 0.5, mouth_y)
 	var mouth_end := Vector2(center.x + mouth_width * 0.5, mouth_y)
-	canvas.draw_line(mouth_start, mouth_end, mouth_color, 12.0, true)
-	canvas.draw_circle(mouth_start, 6.0, mouth_color)
-	canvas.draw_circle(mouth_end, 6.0, mouth_color)
+	canvas.draw_line(mouth_start, mouth_end, mouth_color, 12.0 * scale, true)
+	canvas.draw_circle(mouth_start, 6.0 * scale, mouth_color)
+	canvas.draw_circle(mouth_end, 6.0 * scale, mouth_color)
 
 func _blink_amount(elapsed: float) -> float:
 	var phase: float = fmod(elapsed + 2.0, BLINK_PERIOD)

@@ -28,6 +28,33 @@ const TTT_WIN_LINES := [
 	[0, 4, 8],
 	[2, 4, 6]
 ]
+# Home Message Mode: face LEFT side (x=0..320), text RIGHT side (x=320..640)
+const HOME_MESSAGE_FACE_IDLE_CENTER := Vector2(320.0, 245.0)
+const HOME_MESSAGE_FACE_IDLE_SCALE := 0.86
+const HOME_MESSAGE_FACE_CENTER := Vector2(160.0, 245.0)
+const HOME_MESSAGE_FACE_SCALE := 0.52
+const HOME_MESSAGE_TEXT_X := 342.0
+const HOME_MESSAGE_TEXT_W := 264.0
+const HOME_MESSAGE_TEXT_TOP_PADDING := 76.0
+const HOME_MESSAGE_TEXT_BOTTOM_PADDING := 54.0
+const HOME_MESSAGE_ANIM_ENTER_SECONDS := 0.40
+const HOME_MESSAGE_ANIM_EXIT_SECONDS := 0.33
+# Transition face offscreen exit positions
+const HOME_FACE_OFFSCREEN_LEFT_X := -120.0
+const HOME_FACE_OFFSCREEN_RIGHT_X := 760.0
+const HOME_FACE_OFFSCREEN_DOWN_Y := 620.0
+const HOME_FACE_OFFSCREEN_UP_Y := -140.0
+const FONT_SIZE_MESSAGE_TITLE := 22
+const FONT_SIZE_MESSAGE_BODY := 16
+const FONT_SIZE_MESSAGE_META := 12
+const ANIM_FACE_TO_MESSAGE_SECONDS := 0.32
+const ANIM_MESSAGE_FADE_SECONDS := 0.22
+const INACTIVITY_TIMEOUT_SECONDS := 30.0
+const HOME_MESSAGE_AUTO_DISMISS_SECONDS := 4.0
+const STARTUP_SEQUENCE_SECONDS := 5.0
+const HOME_BEHAVIOR_SOFT_IDLE_BLINK := "soft_idle_blink"
+const MESSAGE_PRIORITY_ORDER := {"critical": 5, "warning": 4, "important": 3, "reminder": 2, "normal": 1, "silent": 0}
+const INACTIVITY_EXEMPT_SCREENS := ["Games"]
 const MENU_TILES := [
 	{"icon": "◷", "title": "Time", "subtitle": "Clock"},
 	{"icon": "◌", "title": "Study", "subtitle": "Focus"},
@@ -52,6 +79,7 @@ const DIAGNOSTIC_TABS := [
 ]
 const SETTINGS_TILES := [
 	{"icon": "◐", "title": "Appearance", "subtitle": "Theme"},
+	{"icon": "i", "title": "User", "subtitle": "Profile"},
 	{"icon": "!", "title": "Notifications", "subtitle": "Alerts"},
 	{"icon": "◆", "title": "Modes", "subtitle": "Behaviour"},
 	{"icon": "▤", "title": "Quick Shelf", "subtitle": "Bottom"},
@@ -278,6 +306,66 @@ var text_input_context := {}
 var text_input_keyboard_mode := "text"
 var study_timer_data := {}
 var study_timer_poll_accumulator := 0.0
+var home_message_active := false
+var home_message_id := ""
+var home_message_title := ""
+var home_message_body := ""
+var home_message_type := "info"
+var home_message_priority := "normal"
+var home_message_expression := "calm"
+var home_message_source := "system"
+var home_message_actions: Array = []
+var home_message_scroll_y := 0.0
+var home_message_fade := 0.0
+var home_message_visible_elapsed := 0.0
+var home_message_started_visible := false
+var home_message_auto_dismiss_seconds := HOME_MESSAGE_AUTO_DISMISS_SECONDS
+var home_message_auto_dismiss_enabled := true
+var home_message_hidden_ids := {}
+var home_message_enter_elapsed := 0.0
+var home_message_enter_active := false
+var home_message_enter_seconds := 0.40
+var home_message_exit_active := false
+var home_message_exit_elapsed := 0.0
+var home_message_exit_seconds := 0.33
+var home_message_exit_remember_hidden := true
+var nexa_message_indicator_count := 0
+var notification_indicator_count := 0
+var nexa_messages_data: Array = []
+var nexa_message_dismissed_ids := {}
+var notification_preview_hidden_ids := {}
+var messages_scroll_y := 0.0
+var messages_swipe_active_id := ""
+var messages_swipe_start_x := 0.0
+var messages_swipe_start_y := 0.0
+var messages_swipe_row_index := -1
+var startup_sequence_active := false
+var startup_sequence_elapsed := 0.0
+var startup_sequence_finished := false
+var startup_check_status := "pending"
+var startup_check_done := false
+var startup_greeting_shown := false
+var face_expression := "calm"
+var face_blink_active := false
+var face_blink_progress := 0.0
+var face_next_blink_seconds := 9.5
+var face_idle_elapsed := 0.0
+var face_mouth_style := "neutral"
+var face_message_position_progress := 0.0
+var current_face_expression := "calm"
+var current_led_behavior := "idle_soft"
+var current_sound_cue := "none"
+var behavior_last_applied_id := ""
+var inactivity_elapsed := 0.0
+var inactivity_timeout_seconds := INACTIVITY_TIMEOUT_SECONDS
+var study_break_game_suggested_for_segment_id := 0
+var study_break_game_active := false
+var study_break_game_started_at := ""
+var study_break_return_screen := "Study"
+var study_break_return_mode := "smart_study"
+var study_break_return_pending := false
+var study_break_last_segment_id := 0
+var study_break_not_now_segment_id := 0
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDTH, HEIGHT)
@@ -287,12 +375,19 @@ func _ready() -> void:
 	api.api_offline.connect(_on_api_offline)
 	api.frame_received.connect(_on_camera_frame_received)
 	set_process(true)
+	_apply_home_behavior("startup_greeting")
+	_start_startup_sequence()
+	api.request_get("/api/settings")
 	_request_redraw()
 
 func _process(delta: float) -> void:
 	elapsed += delta
 	redraw_accumulator += delta
 	clock_redraw_accumulator += delta
+	if startup_sequence_active:
+		_update_startup_sequence(delta)
+	_update_face_behavior(delta)
+	_update_inactivity(delta)
 	if transition_active:
 		transition_progress = minf(1.0, transition_progress + delta / transition_duration)
 		if transition_progress >= 1.0:
@@ -301,14 +396,27 @@ func _process(delta: float) -> void:
 				nav.current_screen = "Face Home"
 			elif nav.current_screen == "Notification Control Center":
 				control_center_refresh_pending = true
+			if nav.current_screen == "Face Home":
+				_show_next_home_item_if_available()
 			_request_redraw()
 	if tic_tac_toe_nexa_thinking:
 		tic_tac_toe_thinking_elapsed += delta
 		if tic_tac_toe_thinking_elapsed >= 0.30:
 			_ttt_finish_nexa_turn()
+	if home_message_active:
+		home_message_fade = minf(1.0, home_message_fade + delta / ANIM_MESSAGE_FADE_SECONDS)
+		face_message_position_progress = minf(1.0, face_message_position_progress + delta / ANIM_FACE_TO_MESSAGE_SECONDS)
+		if home_message_exit_active:
+			_update_home_message_exit_anim(delta)
+		else:
+			_update_home_message_enter(delta)
+			if not home_message_enter_active:
+				_update_home_message_visible_timer(delta)
+	elif nav.current_screen == "Face Home" and not startup_sequence_active:
+		_show_next_home_item_if_available()
 	# Redraw is throttled: Face Home and transitions animate at 30 FPS max,
 	# static panels draw only after input/open/tab changes, and Clock ticks once per second.
-	var animated := transition_active or nav.current_screen == "Face Home" or elapsed < nav.status_bubble_until or tic_tac_toe_nexa_thinking
+	var animated := startup_sequence_active or transition_active or nav.current_screen == "Face Home" or elapsed < nav.status_bubble_until or tic_tac_toe_nexa_thinking or face_blink_active
 	var clock_tick := nav.current_screen == "Clock" and clock_redraw_accumulator >= CLOCK_REDRAW_INTERVAL
 	if (animated or redraw_requested) and redraw_accumulator >= REDRAW_INTERVAL:
 		redraw_accumulator = 0.0
@@ -320,6 +428,8 @@ func _process(delta: float) -> void:
 	_update_api_polling(delta)
 
 func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton or event is InputEventMouseMotion or event is InputEventScreenTouch or event is InputEventScreenDrag:
+		_reset_user_activity()
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_handle_scroll_wheel(event.position, -28.0)
@@ -333,6 +443,8 @@ func _gui_input(event: InputEvent) -> void:
 				return
 			if _begin_notification_swipe(event.position):
 				return
+			if _begin_message_row_swipe(event.position):
+				return
 			if _begin_scroll_drag(event.position):
 				return
 			else:
@@ -343,6 +455,9 @@ func _gui_input(event: InputEvent) -> void:
 				return
 			if notification_swipe_active_id != "":
 				_finish_notification_swipe(event.position)
+				return
+			if messages_swipe_active_id != "":
+				_finish_message_row_swipe(event.position)
 				return
 			if scroll_drag_active:
 				scroll_drag_active = false
@@ -361,6 +476,8 @@ func _gui_input(event: InputEvent) -> void:
 				return
 			if _begin_notification_swipe(event.position):
 				return
+			if _begin_message_row_swipe(event.position):
+				return
 			if _begin_scroll_drag(event.position):
 				return
 			gesture.begin(event.position, elapsed)
@@ -370,6 +487,9 @@ func _gui_input(event: InputEvent) -> void:
 				return
 			if notification_swipe_active_id != "":
 				_finish_notification_swipe(event.position)
+				return
+			if messages_swipe_active_id != "":
+				_finish_message_row_swipe(event.position)
 				return
 			if scroll_drag_active:
 				scroll_drag_active = false
@@ -385,6 +505,8 @@ func _gui_input(event: InputEvent) -> void:
 			_update_slider_drag(event.position)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_pressed():
+		_reset_user_activity()
 	if nav.current_screen != "Games" or event is InputEventKey:
 		return
 	if _handle_games_action_event(event):
@@ -393,6 +515,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.pressed:
 		return
+	_reset_user_activity()
 	if text_input_open:
 		# InputEventKey handling keeps physical keyboard input active while the on-screen keyboard remains visible.
 		if event.keycode == KEY_BACKSPACE:
@@ -410,6 +533,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if _text_input_char_allowed(typed):
 				text_input_value += typed
 		_request_redraw()
+		return
+	if nav.current_screen == "Face Home" and home_message_active and _handle_home_message_action_event(event):
+		return
+	if nav.current_screen == "Messages" and _handle_messages_action_event(event):
 		return
 	if nav.current_screen == "Games" and _handle_games_action_event(event):
 		return
@@ -468,7 +595,10 @@ func _handle_gesture(action: String, position: Vector2) -> void:
 	_request_redraw()
 
 func _handle_tap(position: Vector2) -> void:
-	if (reminders_due_modal_open or calendar_due_modal_open or todo_due_modal_open) and _handle_due_notification_modal_tap(position):
+	_reset_user_activity()
+	if _handle_top_indicator_tap(position):
+		return
+	if nav.current_screen == "Face Home" and (reminders_due_modal_open or calendar_due_modal_open or todo_due_modal_open) and _handle_due_notification_modal_tap(position):
 		return
 	if text_input_open:
 		_handle_text_input_tap(position)
@@ -476,6 +606,9 @@ func _handle_tap(position: Vector2) -> void:
 	if transition_active:
 		return
 	if nav.current_screen == "Face Home":
+		if home_message_active:
+			_handle_home_message_tap(position)
+			return
 		nav.show_status_bubble(elapsed)
 		return
 	if nav.current_screen == "Menu":
@@ -511,6 +644,9 @@ func _handle_tap(position: Vector2) -> void:
 		return
 	if nav.current_screen == "Games":
 		_handle_games_tap(position)
+		return
+	if nav.current_screen == "Messages":
+		_handle_messages_tap(position)
 		return
 
 func _handle_menu_tap(position: Vector2) -> void:
@@ -1912,6 +2048,7 @@ func _handle_text_input_tap(position: Vector2) -> void:
 func _commit_text_input() -> void:
 	var value: String = text_input_value.strip_edges()
 	var target := text_input_target
+	var context := text_input_context.duplicate()
 	_close_text_input()
 	if target == "study_topic":
 		study_topic_text = value
@@ -1987,6 +2124,10 @@ func _commit_text_input() -> void:
 		todo_form_date = value
 	elif target == "todo_time":
 		todo_form_time = value
+	elif target.begins_with("settings_user_"):
+		var section := str(context.get("section", "user"))
+		var key := str(context.get("key", target.replace("settings_user_", "")))
+		_settings_update(section, key, value.substr(0, 40))
 	_request_redraw()
 
 func _settings_update(section: String, key: String, value) -> void:
@@ -2023,11 +2164,20 @@ func _apply_settings_row(row: Dictionary) -> void:
 			api.request_post("/api/reports/generate")
 		elif str(row.get("action", "")) == "benchmark":
 			api.request_post("/api/benchmarks/run")
+		elif str(row.get("action", "")) == "user_save":
+			settings_status_text = "User profile saved."
+			api.request_post("/api/settings/update-many", {"updates": [
+				{"section": "user", "key": "first_name", "value": str(_settings_value("user", "first_name", ""))},
+				{"section": "user", "key": "last_name", "value": str(_settings_value("user", "last_name", ""))},
+				{"section": "user", "key": "preferred_name", "value": str(_settings_value("user", "preferred_name", ""))}
+			]})
 		_request_redraw()
 		return
 	var current = _settings_value(section, key, row.get("default"))
 	if row.has("set_value"):
 		_settings_update(section, key, row.get("set_value"))
+	elif kind == "text":
+		_open_text_input(str(row.get("title", "Setting")), str(current), "settings_user_" + key, {"section": section, "key": key})
 	elif kind == "toggle":
 		_settings_update(section, key, not bool(current))
 	elif kind == "number":
@@ -2158,6 +2308,13 @@ func _settings_rows_for_page(page: String) -> Array:
 			{"title": "Day color", "section": "appearance", "key": "day_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Grey"},
 			{"title": "Month color", "section": "appearance", "key": "month_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Grey"},
 			{"title": "Year color", "section": "appearance", "key": "year_color", "kind": "choice", "options": COLOR_OPTIONS, "default": "Grey"}
+		]
+	if page == "user":
+		return [
+			{"title": "First name", "section": "user", "key": "first_name", "kind": "text", "default": ""},
+			{"title": "Last name", "section": "user", "key": "last_name", "kind": "text", "default": ""},
+			{"title": "How should NeXa call you?", "section": "user", "key": "preferred_name", "kind": "text", "default": ""},
+			{"title": "Save", "action": "user_save", "subtitle": "User profile saved."}
 		]
 	if page == "notifications":
 		return [
@@ -2313,6 +2470,16 @@ func _finish_slider_drag() -> void:
 	slider_drag_kind = ""
 
 func _begin_scroll_drag(position: Vector2) -> bool:
+	if nav.current_screen == "Face Home" and home_message_active and _home_message_text_rect().has_point(position) and _home_message_max_scroll() > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "home_message"
+		scroll_drag_last_y = position.y
+		return true
+	if nav.current_screen == "Messages" and _messages_scroll_rect().has_point(position) and _messages_max_scroll() > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "messages"
+		scroll_drag_last_y = position.y
+		return true
 	if nav.current_screen == "Diagnostics" and _diagnostics_scroll_rect().has_point(position) and _diagnostics_max_scroll() > 0.0:
 		scroll_drag_active = true
 		scroll_drag_area = "diagnostics"
@@ -2375,7 +2542,12 @@ func _update_scroll_drag(position: Vector2) -> void:
 	_apply_scroll(scroll_drag_area, delta_y)
 
 func _handle_scroll_wheel(position: Vector2, amount: float) -> void:
-	if nav.current_screen == "Diagnostics" and _diagnostics_scroll_rect().has_point(position):
+	_reset_user_activity()
+	if nav.current_screen == "Face Home" and home_message_active:
+		_apply_scroll("home_message", amount)
+	elif nav.current_screen == "Messages" and _messages_scroll_rect().has_point(position):
+		_apply_scroll("messages", amount)
+	elif nav.current_screen == "Diagnostics" and _diagnostics_scroll_rect().has_point(position):
 		_apply_scroll("diagnostics", amount)
 	elif nav.current_screen == "Notification Control Center" and _notification_scroll_rect().has_point(position):
 		_apply_scroll("notifications", amount)
@@ -2426,6 +2598,12 @@ func _apply_scroll(area: String, amount: float) -> void:
 		_request_redraw()
 	elif area == "todo_tasks":
 		todo_task_scroll_y = clampf(todo_task_scroll_y + amount, 0.0, _todo_tasks_max_scroll())
+		_request_redraw()
+	elif area == "home_message":
+		home_message_scroll_y = clampf(home_message_scroll_y + amount, 0.0, _home_message_max_scroll())
+		_request_redraw()
+	elif area == "messages":
+		messages_scroll_y = clampf(messages_scroll_y + amount, 0.0, _messages_max_scroll())
 		_request_redraw()
 
 func _diagnostics_scroll_rect() -> Rect2:
@@ -2504,9 +2682,11 @@ func _control_center_content_height() -> float:
 
 func _settings_content_height() -> float:
 	if settings_current_page == "home":
-		return 672.0
+		return 754.0
 	if settings_current_page == "appearance":
 		return 760.0
+	if settings_current_page == "user":
+		return 340.0
 	if settings_current_page == "quick_shelf":
 		return 760.0
 	if settings_current_page == "privacy":
@@ -2596,6 +2776,647 @@ func _todo_active_tasks() -> Array:
 func _todo_completed_tasks() -> Array:
 	var raw = todo_tasks_data.get("completed", [])
 	return raw if raw is Array else []
+
+func _home_clock_rect() -> Rect2:
+	return Rect2(482, 22, 56, 24)
+
+func _home_message_text_rect() -> Rect2:
+	var reserved_actions := 46.0 if not home_message_actions.is_empty() else 0.0
+	return Rect2(HOME_MESSAGE_TEXT_X, HOME_MESSAGE_TEXT_TOP_PADDING, HOME_MESSAGE_TEXT_W, HEIGHT - HOME_MESSAGE_TEXT_TOP_PADDING - HOME_MESSAGE_TEXT_BOTTOM_PADDING - reserved_actions)
+
+func _home_message_action_rect(index: int) -> Rect2:
+	# Actions sit at the bottom of the right (text) half
+	return Rect2(342.0 + float(index) * 86.0, 424, 80, 30)
+
+func _home_message_close_rect() -> Rect2:
+	# Near top-right of text area (text runs x=342..606)
+	return Rect2(584, 58, 26, 26)
+
+func _message_indicator_rect() -> Rect2:
+	if nav.current_screen == "Face Home":
+		return Rect2(546, 22, 30, 28)
+	return Rect2(546, 60, 30, 28)
+
+func _notification_indicator_rect() -> Rect2:
+	if nav.current_screen == "Face Home":
+		return Rect2(584, 22, 30, 28)
+	return Rect2(584, 60, 30, 28)
+
+func _messages_scroll_rect() -> Rect2:
+	return Rect2(28, 88, 584, 360)
+
+func _message_row_rect(index: int) -> Rect2:
+	return Rect2(44, 96.0 + float(index) * 64.0 - messages_scroll_y, 552, 54)
+
+func _messages_content_height() -> float:
+	return maxf(_messages_scroll_rect().size.y, float(nexa_messages_data.size()) * 64.0 + 12.0)
+
+func _messages_max_scroll() -> float:
+	return maxf(0.0, _messages_content_height() - _messages_scroll_rect().size.y)
+
+func _home_message_lines() -> Array:
+	var text := home_message_title + "\n" + home_message_body
+	return _wrap_text_to_width(text, 25)
+
+func _home_message_content_height() -> float:
+	return float(_home_message_lines().size()) * 24.0 + (42.0 if not home_message_actions.is_empty() else 0.0)
+
+func _home_message_max_scroll() -> float:
+	return maxf(0.0, _home_message_content_height() - _home_message_text_rect().size.y)
+
+func _wrap_text_to_width(text: String, max_chars_per_line: int) -> Array:
+	var lines: Array = []
+	for raw_paragraph in text.split("\n"):
+		var paragraph := str(raw_paragraph)
+		if paragraph.strip_edges() == "":
+			lines.append("")
+			continue
+		var current := ""
+		for raw_word in paragraph.split(" "):
+			var word := str(raw_word)
+			if current == "":
+				current = word
+			elif current.length() + 1 + word.length() <= max_chars_per_line:
+				current += " " + word
+			else:
+				lines.append(current)
+				current = word
+		if current != "":
+			lines.append(current)
+	return lines
+
+func _start_startup_sequence() -> void:
+	startup_sequence_active = true
+	startup_sequence_elapsed = 0.0
+	startup_sequence_finished = false
+	startup_check_status = "pending"
+	startup_check_done = false
+	startup_greeting_shown = false
+	_request_redraw()
+
+func _update_startup_sequence(delta: float) -> void:
+	startup_sequence_elapsed += delta
+	if startup_sequence_elapsed >= 1.0 and not startup_check_done:
+		startup_check_status = "ready"
+		startup_check_done = true
+	if startup_sequence_elapsed >= STARTUP_SEQUENCE_SECONDS:
+		_finish_startup_sequence()
+	else:
+		_request_redraw()
+
+func _finish_startup_sequence() -> void:
+	if startup_sequence_finished:
+		return
+	startup_sequence_active = false
+	startup_sequence_finished = true
+	startup_check_status = "ready"
+	startup_check_done = true
+	if not startup_greeting_shown:
+		startup_greeting_shown = true
+		_push_nexa_message({
+			"id": "startup_greeting",
+			"title": _get_startup_greeting_title(),
+			"body": "NeXa is ready.",
+			"source": "Home",
+			"message_type": "greeting",
+			"priority": "normal",
+			"expression": "happy",
+			"led_behavior": "startup_soft",
+			"sound_cue": "startup_chime",
+			"display_policy": "home_or_indicator",
+			"actions": []
+		})
+	_show_next_home_item_if_available()
+	_request_redraw()
+
+func _startup_alpha(start: float, duration: float) -> float:
+	return clampf((startup_sequence_elapsed - start) / duration, 0.0, 1.0)
+
+func _startup_ease(start: float, duration: float) -> float:
+	return _smoothstep(_startup_alpha(start, duration))
+
+func _smoothstep(value: float) -> float:
+	var t := clampf(value, 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+
+func _get_user_first_name() -> String:
+	return str(_settings_value("user", "first_name", "")).strip_edges()
+
+func _get_user_preferred_name() -> String:
+	return str(_settings_value("user", "preferred_name", "")).strip_edges()
+
+func _get_startup_greeting_title() -> String:
+	var preferred_name := _get_user_preferred_name()
+	if preferred_name != "":
+		return "Hello, " + preferred_name + "."
+	var first_name := _get_user_first_name()
+	if first_name != "":
+		return "Hello, " + first_name + "."
+	return "Hello"
+
+func _push_nexa_message(message: Dictionary) -> void:
+	var message_id := str(message.get("id", "msg:" + str(nexa_messages_data.size() + 1)))
+	if bool(nexa_message_dismissed_ids.get(message_id, false)):
+		return
+	for raw_message in nexa_messages_data:
+		var existing: Dictionary = raw_message as Dictionary
+		if str(existing.get("id", "")) == message_id:
+			return
+	message["id"] = message_id
+	if not message.has("display_policy"):
+		message["display_policy"] = "home_or_indicator"
+	nexa_messages_data.append(message)
+	nexa_messages_data.sort_custom(func(a, b): return _message_priority_value(a) > _message_priority_value(b))
+	_update_message_indicator_count()
+	if nav.current_screen == "Face Home" and not startup_sequence_active and not home_message_active and str(message.get("display_policy", "home_or_indicator")) in ["home_only", "home_or_indicator"]:
+		_show_home_message(message)
+	else:
+		_request_redraw()
+
+func _message_priority_value(message: Dictionary) -> int:
+	return int(MESSAGE_PRIORITY_ORDER.get(str(message.get("priority", "normal")), 1))
+
+func _update_message_indicator_count() -> void:
+	nexa_message_indicator_count = nexa_messages_data.size()
+
+func _show_home_message(message: Dictionary) -> void:
+	home_message_active = true
+	home_message_id = str(message.get("id", ""))
+	home_message_title = str(message.get("title", "NeXa"))
+	home_message_body = str(message.get("body", ""))
+	home_message_type = str(message.get("message_type", "info"))
+	home_message_priority = str(message.get("priority", "normal"))
+	home_message_expression = str(message.get("expression", "focused"))
+	home_message_source = str(message.get("source", "NeXa"))
+	var actions_raw = message.get("actions", [])
+	home_message_actions = actions_raw if actions_raw is Array else []
+	home_message_scroll_y = 0.0
+	home_message_fade = 0.0
+	home_message_visible_elapsed = 0.0
+	home_message_auto_dismiss_enabled = _home_message_should_auto_dismiss(home_message_type, home_message_source)
+	_start_home_message_enter()
+	_apply_home_behavior("notification_soft" if home_message_type != "greeting" else "startup_greeting")
+	_request_redraw()
+
+func _home_message_should_auto_dismiss(message_type: String, source: String) -> bool:
+	if str(source).begins_with("notification"):
+		return false
+	return message_type in ["greeting", "info", "study", "system", "diagnostic", "temperature", "status"]
+
+func _update_home_message_visible_timer(delta: float) -> void:
+	if nav.current_screen != "Face Home" or not home_message_auto_dismiss_enabled:
+		return
+	if home_message_enter_active or home_message_exit_active:
+		return
+	home_message_started_visible = true
+	home_message_visible_elapsed += delta
+	if home_message_visible_elapsed >= home_message_auto_dismiss_seconds:
+		_start_home_message_exit(true)
+
+func _update_home_message_enter(delta: float) -> void:
+	if not home_message_enter_active:
+		return
+	home_message_enter_elapsed += delta
+	if home_message_enter_elapsed >= home_message_enter_seconds:
+		home_message_enter_elapsed = home_message_enter_seconds
+		home_message_enter_active = false
+	_request_redraw()
+
+func _home_message_enter_progress() -> float:
+	if home_message_enter_seconds <= 0.0:
+		return 1.0
+	return _smoothstep(clampf(home_message_enter_elapsed / home_message_enter_seconds, 0.0, 1.0))
+
+func _home_message_enter_y_offset() -> float:
+	return lerpf(-180.0, 0.0, _home_message_enter_progress())
+
+func _home_message_enter_alpha() -> float:
+	return _home_message_enter_progress()
+
+func _close_home_message_preview(remember_hidden: bool = true) -> void:
+	if remember_hidden and home_message_id != "":
+		if home_message_id.begins_with("notification:"):
+			notification_preview_hidden_ids[home_message_id] = true
+		else:
+			home_message_hidden_ids[home_message_id] = true
+	home_message_active = false
+	home_message_id = ""
+	home_message_title = ""
+	home_message_body = ""
+	home_message_actions = []
+	home_message_scroll_y = 0.0
+	home_message_fade = 0.0
+	home_message_visible_elapsed = 0.0
+	home_message_started_visible = false
+	home_message_auto_dismiss_enabled = true
+	home_message_enter_elapsed = 0.0
+	home_message_enter_active = false
+	home_message_exit_active = false
+	home_message_exit_elapsed = 0.0
+	face_message_position_progress = 0.0
+	_apply_home_behavior("idle_calm")
+	_update_message_indicator_count()
+	_show_next_home_item_if_available()
+	_request_redraw()
+
+func _dismiss_home_message() -> void:
+	if home_message_id != "":
+		nexa_message_dismissed_ids[home_message_id] = true
+		for index in range(nexa_messages_data.size() - 1, -1, -1):
+			var message: Dictionary = nexa_messages_data[index] as Dictionary
+			if str(message.get("id", "")) == home_message_id:
+				nexa_messages_data.remove_at(index)
+	_close_home_message_preview(true)
+
+func _handle_home_message_tap(position: Vector2) -> void:
+	if _handle_home_message_close_tap(position):
+		return
+	for index in range(home_message_actions.size()):
+		if _home_message_action_rect(index).has_point(position):
+			_activate_home_message_action(str((home_message_actions[index] as Dictionary).get("id", "")))
+			return
+	if _home_message_text_rect().has_point(position) and _home_message_max_scroll() <= 0.0:
+		return
+
+func _handle_home_message_action_event(event: InputEvent) -> bool:
+	if event.is_action_pressed("nexa_back"):
+		_start_home_message_exit(true)
+		return true
+	if event.is_action_pressed("nexa_accept"):
+		if not home_message_actions.is_empty():
+			_activate_home_message_action(str((home_message_actions[0] as Dictionary).get("id", "")))
+		else:
+			_start_home_message_exit(true)
+		return true
+	if event.is_action_pressed("nexa_down"):
+		_apply_scroll("home_message", 28.0)
+		return true
+	if event.is_action_pressed("nexa_up"):
+		_apply_scroll("home_message", -28.0)
+		return true
+	return false
+
+func _handle_home_message_close_tap(position: Vector2) -> bool:
+	if _home_message_close_rect().has_point(position):
+		_start_home_message_exit(true)
+		return true
+	return false
+
+func _activate_home_message_action(action_id: String) -> void:
+	if action_id == "dismiss" or action_id == "not_now":
+		if action_id == "not_now":
+			study_break_not_now_segment_id = study_break_game_suggested_for_segment_id
+		_start_home_message_exit(true)
+	elif action_id == "open_games":
+		study_break_game_active = true
+		study_break_game_started_at = Time.get_datetime_string_from_system(false, true)
+		_close_home_message_preview(true)
+		_open_games()
+	elif action_id == "open_notifications":
+		_close_home_message_preview(true)
+		_open_control_center_notifications()
+	elif action_id == "done":
+		_start_home_message_exit(true)
+	else:
+		_start_home_message_exit(true)
+
+func _handle_messages_action_event(event: InputEvent) -> bool:
+	if event.is_action_pressed("nexa_back") or event.is_action_pressed("nexa_exit"):
+		_go_home()
+		return true
+	if event.is_action_pressed("nexa_down"):
+		_apply_scroll("messages", 32.0)
+		return true
+	if event.is_action_pressed("nexa_up"):
+		_apply_scroll("messages", -32.0)
+		return true
+	return false
+
+func _handle_messages_tap(position: Vector2) -> void:
+	if Rect2(520, 22, 92, 34).has_point(position):
+		_go_home()
+		return
+	for index in range(nexa_messages_data.size()):
+		var rect := _message_row_rect(index)
+		if rect.has_point(position):
+			var message: Dictionary = nexa_messages_data[index] as Dictionary
+			nav.current_screen = "Face Home"
+			transition_active = false
+			home_message_hidden_ids.erase(str(message.get("id", "")))
+			_show_home_message(message)
+			return
+
+## NeXa Messages swipe-delete helpers
+func _begin_message_row_swipe(position: Vector2) -> bool:
+	if nav.current_screen != "Messages":
+		return false
+	if not _messages_scroll_rect().has_point(position):
+		return false
+	for index in range(nexa_messages_data.size()):
+		if _message_row_rect(index).has_point(position):
+			var message: Dictionary = nexa_messages_data[index] as Dictionary
+			messages_swipe_active_id = str(message.get("id", ""))
+			messages_swipe_start_x = position.x
+			messages_swipe_start_y = position.y
+			messages_swipe_row_index = index
+			return messages_swipe_active_id != ""
+	return false
+
+func _finish_message_row_swipe(position: Vector2) -> void:
+	var active_id := messages_swipe_active_id
+	messages_swipe_active_id = ""
+	messages_swipe_row_index = -1
+	if active_id == "":
+		return
+	var dx := position.x - messages_swipe_start_x
+	var dy := position.y - messages_swipe_start_y
+	if absf(dx) > 60.0 and absf(dx) > absf(dy):
+		# Horizontal swipe: dismiss the message
+		_dismiss_nexa_message_by_id(active_id)
+		return
+	if absf(dy) > 60.0 and absf(dy) > absf(dx):
+		# Vertical swipe: scroll the list
+		_apply_scroll("messages", -dy)
+		return
+	# Short movement: treat as tap, open message
+	for index in range(nexa_messages_data.size()):
+		var message: Dictionary = nexa_messages_data[index] as Dictionary
+		if str(message.get("id", "")) == active_id:
+			if _message_row_rect(index).has_point(position) and absf(dx) < 18.0 and absf(dy) < 18.0:
+				nav.current_screen = "Face Home"
+				transition_active = false
+				home_message_hidden_ids.erase(str(message.get("id", "")))
+				_show_home_message(message)
+			return
+
+func _dismiss_nexa_message_by_id(message_id: String) -> void:
+	if message_id == "":
+		return
+	nexa_message_dismissed_ids[message_id] = true
+	for index in range(nexa_messages_data.size() - 1, -1, -1):
+		var message: Dictionary = nexa_messages_data[index] as Dictionary
+		if str(message.get("id", "")) == message_id:
+			nexa_messages_data.remove_at(index)
+	_update_message_indicator_count()
+	_request_redraw()
+
+## Home message enter / exit animation helpers
+func _start_home_message_enter() -> void:
+	home_message_enter_elapsed = 0.0
+	home_message_enter_active = true
+	home_message_exit_active = false
+	home_message_exit_elapsed = 0.0
+	face_message_position_progress = 0.0
+	home_message_started_visible = nav.current_screen == "Face Home"
+
+func _start_home_message_exit(remember_hidden: bool = true) -> void:
+	if home_message_exit_active:
+		return
+	home_message_exit_active = true
+	home_message_exit_elapsed = 0.0
+	home_message_exit_remember_hidden = remember_hidden
+	home_message_enter_active = false
+
+func _update_home_message_exit_anim(delta: float) -> void:
+	home_message_exit_elapsed += delta
+	if home_message_exit_elapsed >= home_message_exit_seconds:
+		home_message_exit_elapsed = home_message_exit_seconds
+		home_message_exit_active = false
+		_finish_home_message_exit()
+	else:
+		_request_redraw()
+
+func _finish_home_message_exit() -> void:
+	_close_home_message_preview(home_message_exit_remember_hidden)
+
+func _home_message_transition_progress() -> float:
+	if home_message_exit_active:
+		return _smoothstep(clampf(home_message_exit_elapsed / home_message_exit_seconds, 0.0, 1.0))
+	return _home_message_enter_progress()
+
+func _home_message_text_y_offset() -> float:
+	if home_message_exit_active:
+		var t := _smoothstep(clampf(home_message_exit_elapsed / home_message_exit_seconds, 0.0, 1.0))
+		return lerpf(0.0, -180.0, t)
+	return lerpf(-180.0, 0.0, _home_message_enter_progress())
+
+func _home_message_text_alpha() -> float:
+	if home_message_exit_active:
+		var t := _smoothstep(clampf(home_message_exit_elapsed / home_message_exit_seconds, 0.0, 1.0))
+		return lerpf(1.0, 0.0, t)
+	return _home_message_enter_progress()
+
+func _home_message_face_center() -> Vector2:
+	var t: float
+	if home_message_exit_active:
+		t = 1.0 - _smoothstep(clampf(home_message_exit_elapsed / home_message_exit_seconds, 0.0, 1.0))
+	else:
+		t = _home_message_enter_progress()
+	return HOME_MESSAGE_FACE_IDLE_CENTER.lerp(HOME_MESSAGE_FACE_CENTER, t)
+
+func _home_message_face_scale() -> float:
+	var t: float
+	if home_message_exit_active:
+		t = 1.0 - _smoothstep(clampf(home_message_exit_elapsed / home_message_exit_seconds, 0.0, 1.0))
+	else:
+		t = _home_message_enter_progress()
+	return lerpf(HOME_MESSAGE_FACE_IDLE_SCALE, HOME_MESSAGE_FACE_SCALE, t)
+
+## Transition face helper: smoothly moves face off-screen as panels slide in/out
+func _home_face_transition_center(base_center: Vector2) -> Vector2:
+	if not transition_active:
+		return base_center
+	var t := _ease_transition(transition_progress)
+	var cx := base_center.x
+	var cy := base_center.y
+	match transition_direction:
+		"menu_open":
+			cx = lerpf(WIDTH * 0.5, HOME_FACE_OFFSCREEN_LEFT_X, t)
+		"menu_close":
+			cx = lerpf(HOME_FACE_OFFSCREEN_LEFT_X, WIDTH * 0.5, t)
+		"clock_open":
+			cx = lerpf(WIDTH * 0.5, HOME_FACE_OFFSCREEN_RIGHT_X, t)
+		"clock_close":
+			cx = lerpf(HOME_FACE_OFFSCREEN_RIGHT_X, WIDTH * 0.5, t)
+		"control_open":
+			cy = lerpf(245.0, HOME_FACE_OFFSCREEN_DOWN_Y, t)
+		"control_close":
+			cy = lerpf(HOME_FACE_OFFSCREEN_DOWN_Y, 245.0, t)
+		"quick_open":
+			cy = lerpf(245.0, HOME_FACE_OFFSCREEN_UP_Y, t)
+		"quick_close":
+			cy = lerpf(HOME_FACE_OFFSCREEN_UP_Y, 245.0, t)
+	return Vector2(cx, cy)
+
+func _handle_top_indicator_tap(position: Vector2) -> bool:
+	if nav.current_screen == "Games":
+		return false
+	if _message_indicator_rect().has_point(position) and nexa_message_indicator_count > 0:
+		_open_messages_center()
+		return true
+	if _notification_indicator_rect().has_point(position) and notification_indicator_count > 0:
+		_open_control_center_notifications()
+		return true
+	return false
+
+func _show_next_home_item_if_available() -> void:
+	if startup_sequence_active or nav.current_screen != "Face Home" or home_message_active:
+		return
+	var best_message := {}
+	for raw_message in nexa_messages_data:
+		var message: Dictionary = raw_message as Dictionary
+		var message_id := str(message.get("id", ""))
+		var display_policy := str(message.get("display_policy", "home_or_indicator"))
+		if bool(home_message_hidden_ids.get(message_id, false)):
+			continue
+		if display_policy not in ["home_only", "home_or_indicator"]:
+			continue
+		if best_message.is_empty() or _message_priority_value(message) > _message_priority_value(best_message):
+			best_message = message
+	if not best_message.is_empty():
+		_show_home_message(best_message)
+		return
+	var notification := _next_home_notification_preview()
+	if not notification.is_empty():
+		_show_home_message(notification)
+
+func _next_home_notification_preview() -> Dictionary:
+	if notifications_data.is_empty():
+		return {}
+	var best_notification := {}
+	var best_priority := -1
+	for raw_notification in notifications_data:
+		var notification: Dictionary = raw_notification as Dictionary
+		var preview_id := "notification:" + str(notification.get("id", ""))
+		if bool(notification_preview_hidden_ids.get(preview_id, false)):
+			continue
+		var priority := _message_priority_value({"priority": "reminder"})
+		if priority > best_priority:
+			best_priority = priority
+			best_notification = notification
+	if best_notification.is_empty():
+		return {}
+	return {
+		"id": "notification:" + str(best_notification.get("id", "")),
+		"title": str(best_notification.get("title", "Notification")),
+		"body": (str(best_notification.get("body", "")) + "\n" + str(best_notification.get("subtitle", ""))).strip_edges(),
+		"source": "notification:" + str(best_notification.get("type", "notification")),
+		"message_type": str(best_notification.get("type", "notification")),
+		"priority": "reminder",
+		"expression": "focused",
+		"display_policy": "home_or_indicator",
+		"actions": [{"id": "open_notifications", "label": "Open"}, {"id": "dismiss", "label": "Dismiss"}]
+	}
+
+func _apply_home_behavior(behavior_id: String) -> void:
+	behavior_last_applied_id = behavior_id
+	if behavior_id == "startup_greeting":
+		current_face_expression = "happy"
+		current_led_behavior = "startup_soft"
+		current_sound_cue = "startup_chime"
+		face_mouth_style = "small_smile"
+	elif behavior_id == "notification_soft":
+		current_face_expression = "focused"
+		current_led_behavior = "notification_blue"
+		current_sound_cue = "notification_chime"
+		face_mouth_style = "neutral"
+	elif behavior_id == "warning_soft":
+		current_face_expression = "concerned"
+		current_led_behavior = "warning_amber"
+		current_sound_cue = "warning_soft"
+		face_mouth_style = "concerned"
+	elif behavior_id == "private_locked":
+		current_face_expression = "locked"
+		current_led_behavior = "private_lock"
+		current_sound_cue = "none"
+		face_mouth_style = "neutral"
+	else:
+		current_face_expression = "calm"
+		current_led_behavior = "idle_soft"
+		current_sound_cue = "none"
+		face_mouth_style = "neutral"
+	face_expression = current_face_expression
+
+func _update_face_behavior(delta: float) -> void:
+	face_idle_elapsed += delta
+	if face_blink_active:
+		face_blink_progress += delta / 0.18
+		if face_blink_progress >= 1.0:
+			face_blink_active = false
+			face_blink_progress = 0.0
+			face_idle_elapsed = 0.0
+			face_next_blink_seconds = 8.0 + fmod(elapsed * 1.37, 4.0)
+			_request_redraw()
+	elif face_idle_elapsed >= face_next_blink_seconds:
+		face_blink_active = true
+		face_blink_progress = 0.0
+		_request_redraw()
+
+func _update_inactivity(delta: float) -> void:
+	if text_input_open or nav.current_screen in INACTIVITY_EXEMPT_SCREENS:
+		inactivity_elapsed = 0.0
+		return
+	if nav.current_screen == "Face Home":
+		inactivity_elapsed = 0.0
+		return
+	inactivity_elapsed += delta
+	if inactivity_elapsed >= inactivity_timeout_seconds:
+		inactivity_elapsed = 0.0
+		_go_home()
+
+func _reset_user_activity() -> void:
+	inactivity_elapsed = 0.0
+
+func _sync_notification_policy_after_rebuild() -> void:
+	notification_indicator_count = notifications_data.size()
+	reminders_due_modal_open = nav.current_screen == "Face Home" and reminders_due_modal_open
+	calendar_due_modal_open = nav.current_screen == "Face Home" and calendar_due_modal_open
+	todo_due_modal_open = nav.current_screen == "Face Home" and todo_due_modal_open
+	_show_next_home_item_if_available()
+
+func _handle_study_break_game_policy(payload: Dictionary) -> void:
+	var active := bool(payload.get("active", false))
+	var kind := str(payload.get("kind", payload.get("current_segment_type", "")))
+	var segment_raw = payload.get("segment", {})
+	var segment_id := 0
+	if segment_raw is Dictionary:
+		segment_id = int((segment_raw as Dictionary).get("id", 0))
+	if segment_id > 0:
+		study_break_last_segment_id = segment_id
+	var planned := int(payload.get("planned_seconds", 0))
+	var remaining := int(payload.get("remaining_seconds", planned))
+	var break_elapsed: int = max(0, planned - remaining)
+	if active and kind == "break" and segment_id > 0 and break_elapsed >= 30 and study_break_game_suggested_for_segment_id != segment_id and study_break_not_now_segment_id != segment_id:
+		study_break_game_suggested_for_segment_id = segment_id
+		_push_nexa_message({
+			"id": "study_break_game:" + str(segment_id),
+			"title": "Break time",
+			"body": "Want to play a quick game during your break?",
+			"source": "Study",
+			"message_type": "study",
+			"priority": "normal",
+			"expression": "focused",
+			"led_behavior": "notification_blue",
+			"sound_cue": "notification_chime",
+			"display_policy": "home_or_indicator",
+			"actions": [{"id": "open_games", "label": "Yes"}, {"id": "not_now", "label": "Not now"}]
+		})
+	if study_break_game_active and active and kind == "focus":
+		study_break_game_active = false
+		study_break_return_pending = true
+		if nav.current_screen == "Games":
+			_open_study("smart_study")
+		_push_nexa_message({
+			"id": "study_break_done:" + str(segment_id),
+			"title": "Break is over.",
+			"body": "Focus time starts now.",
+			"source": "Study",
+			"message_type": "study",
+			"priority": "important",
+			"expression": "focused",
+			"display_policy": "home_or_indicator",
+			"actions": []
+		})
 
 func _games_card_rect(index: int) -> Rect2:
 	return Rect2(44.0 + float(index % 2) * 278.0, 126.0 + float(int(index / 2)) * 112.0 - games_library_scroll_y, 252.0, 88.0)
@@ -2983,6 +3804,18 @@ func _open_control_center() -> void:
 	control_center_refresh_pending = true
 	# Control Center opens from cached data first. API refresh happens after transition to avoid UI lag.
 
+func _open_control_center_notifications() -> void:
+	_open_control_center()
+	selected_control_detail = ""
+	notification_scroll_y = 0.0
+
+func _open_messages_center() -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "Messages"
+	transition_active = false
+	messages_scroll_y = 0.0
+	_request_redraw()
+
 func _open_quick_shelf() -> void:
 	_navigate_to("Quick Shelf", "quick_open")
 	quick_shelf_scroll_y = 0.0
@@ -3115,6 +3948,8 @@ func _go_home() -> void:
 		games_mode = "library"
 		games_help_open = false
 		tic_tac_toe_nexa_thinking = false
+	elif nav.current_screen == "Messages":
+		messages_scroll_y = 0.0
 	if direction == "diagnostics":
 		nav.previous_screen = nav.current_screen
 		nav.current_screen = "Face Home"
@@ -3274,6 +4109,7 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 		var smart_session_raw = payload.get("session", {})
 		if smart_session_raw is Dictionary:
 			study_active_smart_session_id = int(smart_session_raw.get("id", study_active_smart_session_id))
+		_handle_study_break_game_policy(payload)
 		if nav.current_screen == "Study" and study_current_page == "smart_study":
 			study_data = payload
 	elif endpoint.begins_with("/api/study/"):
@@ -3634,6 +4470,7 @@ func _rebuild_notifications_from_reminders() -> void:
 			notification_selected = {}
 	if notifications_data.is_empty():
 		reminders_pending_due_id = 0
+	_sync_notification_policy_after_rebuild()
 
 func _format_due_label(value: String) -> String:
 	if value.length() >= 16:
@@ -3667,6 +4504,7 @@ func _local_remove_notification(notification_id: String, remember_dismissed: boo
 	if notification_id.begins_with("todo:" + str(todo_pending_due_task_id) + ":"):
 		todo_due_modal_open = false
 		todo_pending_due_task_id = 0
+	notification_indicator_count = notifications_data.size()
 	_request_redraw()
 
 func _dismiss_notification(notification: Dictionary) -> void:
@@ -3808,14 +4646,18 @@ func _on_camera_frame_received(_endpoint: String, body: PackedByteArray) -> void
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	if startup_sequence_active:
+		_draw_startup_sequence()
+		return
 	if transition_active:
 		_draw_transition()
 	else:
 		_draw_screen(nav.current_screen, Vector2.ZERO)
+	_draw_top_bar_indicators()
 	_draw_global_overlays()
 
 func _draw_global_overlays() -> void:
-	if reminders_due_modal_open or calendar_due_modal_open or todo_due_modal_open:
+	if nav.current_screen == "Face Home" and false:
 		_draw_due_reminder_modal()
 
 func _draw_transition() -> void:
@@ -3840,7 +4682,9 @@ func _draw_transition() -> void:
 			overlay_offset = Vector2(0.0, HEIGHT * t)
 		_:
 			overlay_offset = Vector2(0.0, 12.0 * (1.0 - t))
-	_draw_face_home()
+	# Draw home face with transition-driven center so it exits toward the opposite side
+	var face_center := _home_face_transition_center(Vector2(WIDTH * 0.5, 245.0))
+	_draw_face_home_during_transition(face_center)
 	_draw_overlay_screen(transition_overlay, overlay_offset)
 
 func _ease_transition(value: float) -> float:
@@ -3881,6 +4725,8 @@ func _draw_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_todo()
 		"Games":
 			_draw_games()
+		"Messages":
+			_draw_messages_center()
 		_:
 			_draw_placeholder(nav.placeholder_title if nav.placeholder_title != "" else screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -3904,6 +4750,8 @@ func _draw_overlay_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_todo()
 		"Games":
 			_draw_games()
+		"Messages":
+			_draw_messages_center()
 		_:
 			_draw_placeholder(screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -3999,14 +4847,58 @@ func _rect_visible(rect: Rect2, view_rect: Rect2) -> bool:
 	return rect.position.y + rect.size.y >= view_rect.position.y and rect.position.y <= view_rect.position.y + view_rect.size.y
 
 func _draw_face_home() -> void:
-	face.draw_face(self, Vector2(WIDTH, HEIGHT), elapsed, _settings_color(str(_settings_value("appearance", "eye_color", "Blue")), Color(0.18, 0.58, 1.0, 1.0)), _settings_color(str(_settings_value("appearance", "mouth_color", "Blue")), Color(0.18, 0.58, 1.0, 0.95)))
-	_draw_text(Time.get_datetime_string_from_system(false, true).substr(11, 5), Vector2(538, 34), 17, Color(0.48, 0.62, 0.82, 0.82))
-	_draw_reminder_top_badge()
-	_draw_study_timer_overlay()
-	if elapsed < nav.status_bubble_until:
-		var bubble: Rect2 = Rect2(198, 350, 244, 58)
-		_draw_card(bubble, Color(0.075, 0.085, 0.105, 0.96), 28.0, false)
-		_draw_text("Status OK", bubble.position + Vector2(28, 37), 20, ThemeScript.TEXT)
+	if home_message_active:
+		_draw_home_message_mode()
+	else:
+		face.draw_face(self, Vector2(WIDTH, HEIGHT), elapsed, _settings_color(str(_settings_value("appearance", "eye_color", "Blue")), Color(0.18, 0.58, 1.0, 1.0)), _settings_color(str(_settings_value("appearance", "mouth_color", "Blue")), Color(0.18, 0.58, 1.0, 0.95)))
+		_draw_study_timer_overlay()
+
+func _draw_face_home_during_transition(face_center: Vector2) -> void:
+	# Used by _draw_transition: draws home face at a transition-adjusted center.
+	# The face renderer uses transition center in transition draw — face is not drawn over completed non-Home screens.
+	if home_message_active:
+		_draw_home_message_mode()
+	else:
+		var eye_color := _settings_color(str(_settings_value("appearance", "eye_color", "Blue")), Color(0.18, 0.58, 1.0, 1.0))
+		var mouth_color := _settings_color(str(_settings_value("appearance", "mouth_color", "Blue")), Color(0.18, 0.58, 1.0, 0.95))
+		face.draw_face_at(self, face_center, HOME_MESSAGE_FACE_IDLE_SCALE, elapsed, eye_color, mouth_color)
+		_draw_study_timer_overlay()
+
+func _draw_startup_sequence() -> void:
+	draw_rect(Rect2(0, 0, WIDTH, HEIGHT), Color(0.0, 0.0, 0.0, 1.0), true)
+	_draw_startup_brand()
+	_draw_startup_face()
+	var status_alpha := _startup_alpha(4.20, 0.35)
+	if status_alpha > 0.0:
+		var status := "Systems ready" if startup_check_done else "Starting local systems..."
+		_draw_centered_text(status, WIDTH * 0.5, 430.0, 12, Color(0.54, 0.60, 0.68, 0.45 * status_alpha))
+
+func _draw_startup_brand() -> void:
+	var move_t := _startup_ease(2.45, 1.75)
+	var brand_y := lerpf(190.0, 96.0, move_t)
+	var dev_y := lerpf(238.0, 136.0, move_t)
+	var nexa_alpha := _startup_alpha(0.45, 1.00)
+	var totem_alpha := _startup_alpha(1.15, 0.95)
+	var dev_alpha := _startup_alpha(1.75, 0.95)
+	var nexa_size := 46
+	var totem_size := 36
+	var nexa_text := "NeXa"
+	var totem_text := "ToTem"
+	var nexa_w := _font().get_string_size(nexa_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, nexa_size).x
+	var total_w := nexa_w + 12.0 + _font().get_string_size(totem_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, totem_size).x
+	var start_x := WIDTH * 0.5 - total_w * 0.5
+	_draw_text(nexa_text, Vector2(start_x, brand_y), nexa_size, Color(0.94, 0.93, 0.88, nexa_alpha))
+	_draw_text(totem_text, Vector2(start_x + nexa_w + 12.0, brand_y - 2.0), totem_size, Color(0.62, 0.66, 0.72, totem_alpha))
+	_draw_centered_text("DevDul", WIDTH * 0.5, dev_y, 15, Color(0.48, 0.53, 0.60, dev_alpha))
+
+func _draw_startup_face() -> void:
+	var slide_t := _startup_ease(2.45, 1.75)
+	if slide_t <= 0.0:
+		return
+	var eye_color := _settings_color(str(_settings_value("appearance", "eye_color", "Blue")), Color(0.18, 0.58, 1.0, 1.0))
+	var mouth_color := _settings_color(str(_settings_value("appearance", "mouth_color", "Blue")), Color(0.18, 0.58, 1.0, 0.95))
+	var center_y := lerpf(590.0, 285.0, slide_t)
+	face.draw_face_at(self, Vector2(320.0, center_y), 0.82, elapsed, eye_color, mouth_color)
 
 func _draw_reminder_top_badge() -> void:
 	var count := notifications_data.size()
@@ -4014,6 +4906,98 @@ func _draw_reminder_top_badge() -> void:
 		return
 	_draw_pill(Rect2(466, 30, 54, 24), Color(0.16, 0.10, 0.05, 0.94), true)
 	_draw_centered_text("!" + str(count), 493.0, 47.0, 11, ThemeScript.TEXT)
+
+func _draw_home_message_mode() -> void:
+	# Layout: face LEFT side (x=0..320), text RIGHT side (x=342..606). No container, no border.
+	draw_rect(Rect2(0, 0, WIDTH, HEIGHT), Color(0.0, 0.0, 0.0, 1.0), true)
+	var eye_color := _settings_color(str(_settings_value("appearance", "eye_color", "Blue")), Color(0.18, 0.58, 1.0, 1.0))
+	var mouth_color := _settings_color(str(_settings_value("appearance", "mouth_color", "Blue")), Color(0.18, 0.58, 1.0, 0.95))
+	# Face smoothly lerps from idle center to right-side message center
+	var face_center := _home_message_face_center()
+	var face_scale := _home_message_face_scale()
+	face.draw_face_at(self, face_center, face_scale, elapsed, eye_color, mouth_color)
+	# Text enters from top (-180 offset -> 0) and exits upward (0 -> -180)
+	var text_rect := _home_message_text_rect()
+	var lines := _home_message_lines()
+	var content_height := _home_message_content_height()
+	var text_y_off := _home_message_text_y_offset()
+	var text_alpha := _home_message_text_alpha()
+	var y := text_rect.position.y
+	if lines.size() <= 5:
+		y = text_rect.position.y + maxf(0.0, (text_rect.size.y - content_height) * 0.5)
+	else:
+		y -= home_message_scroll_y
+	for index in range(lines.size()):
+		var line := str(lines[index])
+		var size := FONT_SIZE_MESSAGE_TITLE if index == 0 else FONT_SIZE_MESSAGE_BODY
+		var color := ThemeScript.TEXT if index == 0 else ThemeScript.TEXT_MUTED
+		color.a *= text_alpha
+		var baseline := y + text_y_off + float(index) * 24.0 + float(size)
+		if baseline >= text_rect.position.y - 30.0 and baseline <= text_rect.position.y + text_rect.size.y + 30.0:
+			_draw_text(line, Vector2(text_rect.position.x, baseline), size, color)
+	if _home_message_max_scroll() > 0.0:
+		var thumb_h := maxf(26.0, text_rect.size.y * text_rect.size.y / _home_message_content_height())
+		var thumb_y := text_rect.position.y + (text_rect.size.y - thumb_h) * clampf(home_message_scroll_y / _home_message_max_scroll(), 0.0, 1.0)
+		_draw_rounded_rect(Rect2(text_rect.position.x + text_rect.size.x + 8.0, thumb_y, 3, thumb_h), Color(1.0, 1.0, 1.0, 0.14 * text_alpha), 2.0)
+	# Actions sit at bottom of text (left) side
+	for index in range(home_message_actions.size()):
+		var action: Dictionary = home_message_actions[index] as Dictionary
+		var action_rect := _home_message_action_rect(index)
+		action_rect.position.y += text_y_off
+		_draw_button(action_rect, str(action.get("label", "Open")), index == 0)
+	# Close X near top-right of text area, moves with text animation
+	var close_rect := _home_message_close_rect()
+	close_rect.position.y += text_y_off
+	_draw_circular_close_button(close_rect)
+
+func _draw_top_bar_indicators() -> void:
+	if nav.current_screen == "Games":
+		return
+	_update_message_indicator_count()
+	notification_indicator_count = notifications_data.size()
+	if nav.current_screen == "Face Home":
+		_draw_home_clock()
+	if nav.current_screen == "Face Home" and not home_message_active and nexa_message_indicator_count <= 0 and notification_indicator_count <= 0:
+		return
+	if nexa_message_indicator_count > 0:
+		_draw_message_indicator(_message_indicator_rect(), nexa_message_indicator_count)
+	if notification_indicator_count > 0:
+		_draw_notification_indicator(_notification_indicator_rect(), notification_indicator_count)
+
+func _draw_message_indicator(rect: Rect2, count: int) -> void:
+	var color := Color(0.34, 0.62, 1.0, 0.92)
+	_draw_rounded_outline(Rect2(rect.position.x + 3.0, rect.position.y + 5.0, 20.0, 15.0), color, 5.0)
+	draw_line(Vector2(rect.position.x + 10.0, rect.position.y + 20.0), Vector2(rect.position.x + 7.0, rect.position.y + 24.0), color, 1.0)
+	draw_circle(Vector2(rect.position.x + 13.0, rect.position.y + 12.5), 2.0, color)
+	_draw_indicator_badge(rect, count, color)
+
+func _draw_notification_indicator(rect: Rect2, count: int) -> void:
+	var color := Color(0.92, 0.94, 0.96, 0.86)
+	draw_line(Vector2(rect.position.x + 10.0, rect.position.y + 19.0), Vector2(rect.position.x + 20.0, rect.position.y + 19.0), color, 1.4)
+	draw_line(Vector2(rect.position.x + 11.0, rect.position.y + 19.0), Vector2(rect.position.x + 11.0, rect.position.y + 11.0), color, 1.4)
+	draw_line(Vector2(rect.position.x + 19.0, rect.position.y + 19.0), Vector2(rect.position.x + 19.0, rect.position.y + 11.0), color, 1.4)
+	draw_circle(Vector2(rect.position.x + 15.0, rect.position.y + 10.0), 4.0, color)
+	draw_circle(Vector2(rect.position.x + 15.0, rect.position.y + 22.0), 2.0, color)
+	_draw_indicator_badge(rect, count, color)
+
+func _draw_indicator_badge(rect: Rect2, count: int, color: Color) -> void:
+	var label := "9+" if count > 9 else str(count)
+	var badge := Rect2(rect.position.x + 14.0, rect.position.y - 1.0, 20.0, 14.0)
+	_draw_rounded_rect(badge, Color(color.r, color.g, color.b, 0.95), 7.0)
+	_draw_centered_text(label, badge.position.x + badge.size.x * 0.5, badge.position.y + 10.5, 8, Color(0.02, 0.025, 0.032, 1.0))
+
+func _draw_home_clock() -> void:
+	var now := Time.get_datetime_dict_from_system()
+	var label := "%02d:%02d" % [int(now.hour), int(now.minute)]
+	var rect := _home_clock_rect()
+	_draw_text(label, Vector2(rect.position.x + 5.0, rect.position.y + 17.0), 14, Color(0.58, 0.66, 0.78, 0.78))
+
+func _draw_circular_close_button(rect: Rect2) -> void:
+	var center := rect.position + rect.size * 0.5
+	draw_circle(center, rect.size.x * 0.5, Color(0.05, 0.06, 0.075, 0.72))
+	draw_arc(center, rect.size.x * 0.5 - 0.5, 0.0, TAU, 24, Color(0.72, 0.76, 0.82, 0.45), 1.0)
+	draw_line(center + Vector2(-4.5, -4.5), center + Vector2(4.5, 4.5), Color(0.82, 0.85, 0.90, 0.85), 1.3)
+	draw_line(center + Vector2(4.5, -4.5), center + Vector2(-4.5, 4.5), Color(0.82, 0.85, 0.90, 0.85), 1.3)
 
 func _draw_due_reminder_modal() -> void:
 	if notifications_data.is_empty():
@@ -4653,6 +5637,8 @@ func _draw_settings_detail_page() -> void:
 		var pin_enabled: bool = bool(privacy_status_data.get("pin_enabled", false))
 		var note: String = "Private content unlocked" if bool(privacy_status_data.get("unlocked", false)) else ("Go to Privacy to set a 4-digit PIN" if private_on and not pin_enabled else "Private content locked")
 		_draw_text_if_visible(note, Vector2(50, 438 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
+	if settings_current_page == "user":
+		_draw_text_if_visible(settings_status_text, Vector2(50, 330 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
 	if settings_current_page == "safety" or settings_current_page == "exit_nexa":
 		_draw_text_if_visible("Exit NeXa? Cancel or Exit UI planned only.", Vector2(50, 438 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
 
@@ -4923,6 +5909,29 @@ func _draw_calendar_form() -> void:
 	_draw_text("Repeat: None / Daily / Weekly / Monthly / Yearly", Vector2(48, 334), 9, ThemeScript.TEXT_DIM)
 	_draw_button(Rect2(44, 390, 170, 34), "Save", false)
 	_draw_button(Rect2(232, 390, 170, 34), "Cancel", false)
+
+func _draw_messages_center() -> void:
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	_draw_text("NeXa Messages", Vector2(30, 48), 25, ThemeScript.TEXT)
+	_draw_pill(Rect2(520, 22, 92, 34), Color(0.10, 0.11, 0.13, 0.94), false)
+	_draw_centered_text("Home", 566.0, 43.0, 12, ThemeScript.TEXT_MUTED)
+	var view := _messages_scroll_rect()
+	if nexa_messages_data.is_empty():
+		_draw_centered_text("No messages", 320.0, 244.0, 15, ThemeScript.TEXT_MUTED)
+		return
+	for index in range(nexa_messages_data.size()):
+		var rect := _message_row_rect(index)
+		if not _rect_visible(rect, view):
+			continue
+		var message: Dictionary = nexa_messages_data[index] as Dictionary
+		_draw_card(rect, Color(0.075, 0.086, 0.106, 1.0), 14.0, false)
+		var priority := str(message.get("priority", "normal"))
+		var accent := ThemeScript.WARNING if priority == "warning" else (Color(1.0, 0.35, 0.35, 1.0) if priority == "critical" else ThemeScript.BLUE)
+		draw_circle(rect.position + Vector2(18, 27), 4.0, accent)
+		_draw_text(_short_text(str(message.get("title", "NeXa")), 28), rect.position + Vector2(34, 22), 13, ThemeScript.TEXT)
+		_draw_text(_short_text(str(message.get("body", "")), 42), rect.position + Vector2(34, 40), 10, ThemeScript.TEXT_MUTED)
+		_draw_text(_short_text(str(message.get("source", "system")), 14), rect.position + Vector2(454, 22), 9, ThemeScript.TEXT_DIM)
+	_draw_scrollbar(view, messages_scroll_y, _messages_content_height())
 
 func _draw_games() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)

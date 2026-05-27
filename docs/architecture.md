@@ -575,3 +575,109 @@ I added Back and Exit behavior, where Back returns to the game menu and Exit ret
 I kept the game lightweight for Raspberry Pi 5 2GB.
 
 I kept global notifications working above the game.
+
+## 2026-05-26 — Home Message System, Behaviors and Non-Intrusive Indicators
+
+I added the Home Message Mode direction where the face stays alive on the left and text appears on the right without boxes, borders or chat bubbles.
+
+I added a message model and queue foundation for NeXa/system messages.
+
+I added a behavior registry foundation for face expression, LED behavior and sound cue mapping.
+
+I added custom top-bar indicators for NeXa messages and notifications.
+
+I changed normal notifications so they do not interrupt every screen with full popups.
+
+I kept full message content available through Home Message Mode, Message Center and Notification Center.
+
+I added initial behaviors: startup greeting and soft idle blink.
+
+I added the Smart Study break game suggestion after 30 seconds of break time.
+
+I kept games exempt from normal inactivity return, but allowed Study break end to close break games and return to focus.
+
+## 2026-05-26 — Home Startup Animation and Message Timing Polish
+
+I added the NeXa ToTem DevDul startup animation as a lightweight Home sequence inside the existing Godot LCD UI.
+
+I made the startup greeting auto-dismiss after 10 seconds.
+
+I made NeXa messages auto-dismiss 10 seconds after they are actually visible on Home, so messages created while the user is in another app wait behind the indicator until they are seen.
+
+I added a circular close button for Home messages. Closing a preview only hides the preview; it does not delete reminder, calendar, or To Do source records.
+
+I balanced Home Message Mode into a left face half and right text half.
+
+I added a subtle Home clock that avoids the message and notification indicators.
+
+I fixed Home notification previews so reminders are not hidden forever behind the greeting. Pending reminders can appear on Home after the greeting closes.
+
+I kept non-Home notifications non-intrusive through top indicators and Notification Center.
+
+I kept the Smart Study break game suggestion behavior.
+
+## 2026-05-26 — User Profile Greeting and Slower Startup Polish
+
+I slowed the NeXa ToTem startup animation from 3 seconds to 5 seconds.
+
+I made the startup greeting slide down softly after the startup animation.
+
+I removed the hardcoded user name from the startup greeting.
+
+I added Settings -> User with first name, last name, and preferred call name.
+
+I made the greeting use preferred call name first, then first name, then plain Hello.
+
+I kept the greeting visible for 10 seconds after it is actually shown.
+
+I kept reminders and notifications able to appear after the greeting closes.
+
+## 2026-05-27 — Home Animation Polish: Swipe Delete, Enter/Exit Animation, Face Transitions
+
+I flipped the Home Message Mode layout from face-LEFT/text-RIGHT to text-LEFT/face-RIGHT.
+
+Text now sits at x=34..298 and slides in from y=-180 to 0 on enter, and back out to y=-180 on exit.
+
+The face now sits at x=480 at scale 0.52 in message mode, and lerps back to the idle center at x=320 at scale 0.86 on exit.
+
+I added a smooth exit animation so message dismiss fades the text upward and returns the face to center before closing, removing the previous hard jump.
+
+I added a proper enter/exit state machine: home_message_enter_active, home_message_exit_active, _start_home_message_enter, _start_home_message_exit, _update_home_message_exit_anim, _finish_home_message_exit.
+
+I added animation helpers: _home_message_text_y_offset, _home_message_text_alpha, _home_message_face_center, _home_message_face_scale.
+
+The auto-dismiss timer only counts elapsed seconds while the message is fully visible, not during enter or exit animation.
+
+I added swipe-to-dismiss in Messages Center. Each row supports left/right swipe with a 60px threshold and abs(dx) > abs(dy) guard so vertical scroll is preserved. State is tracked in messages_swipe_active_id, messages_swipe_start_x, messages_swipe_start_y, messages_swipe_row_index.
+
+I added face movement during screen transitions. The face animates offscreen in the direction of the transition: left for menu open/close, right for clock open/close, down for control center open/close, up for Quick Shelf open/close. The face is not drawn over completed non-Home screens.
+
+I added _home_face_transition_center and _draw_face_home_during_transition so the transition draw path uses the correct animated center without affecting the normal Face Home draw path.
+
+I updated design_tokens.gd with the new text-left/face-right constants, offscreen positions, and new animation timing.
+
+I kept Raspberry Pi 5 2GB performance as top priority: no shaders, no blur, no expensive effects, no fullscreen, Godot Compatibility/OpenGL only.
+
+## 2026-05-27 — Final Home Message Side Correction
+
+I corrected Home Message Mode so the NeXa face stays on the left and all message/notification text appears on the right.
+
+Face now sits at message-mode center Vector2(160, 245) scale 0.52, lerping from idle center Vector2(320, 245).
+
+Text now sits at x=342, width=264 (x=342..606), so it never overlaps the face half.
+
+Close X moved to Rect2(584, 58, 26, 26) to stay inside the right-side text area near the clock/indicator strip.
+
+Action buttons moved to the right side starting at x=342.
+
+I kept the existing enter/exit animation intact. Text still drops in from y=-180 to 0 on enter and exits upward back to y=-180 on exit. The face still moves smoothly from center to the left-side message position on enter and returns smoothly to center on exit.
+
+I kept NeXa Messages swipe dismiss, the 10-second visible timer, the circular close button, and non-intrusive notification indicators unchanged.
+
+## 2026-05-27 — Shorter Home Message Preview Timing
+
+I shortened NeXa Home message preview timing from 10 visible seconds to 4 visible seconds.
+
+The timer still only counts while the message is actually fully visible on Home. It does not count during the enter animation, the exit animation, or while the user is on another screen.
+
+Existing enter/exit animations, close button, notification indicators, swipe dismiss, and reminder/calendar/To Do preview flow stay unchanged.

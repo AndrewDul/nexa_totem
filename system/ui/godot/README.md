@@ -134,6 +134,23 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Play with NeXa uses deterministic local move logic, not AI models, LLM calls, backend calls, or external services.
 - Games support touch, mouse, keyboard, and future joystick/remote input through shared NeXa input actions.
 - Tic-Tac-Toe keeps Back and Exit separate: Back returns to the game menu, while Exit returns to Face Home.
+- Face Home has a Home Message Mode where the NeXa face is on the LEFT (x=0..320) and all message/notification text appears on the RIGHT (x=342..606) without a card, border, or chat bubble.
+- Home starts with a lightweight 5-second NeXa ToTem DevDul animation, then shows the startup greeting for 10 visible seconds.
+- The startup greeting slides in from y=-180 to 0 and fades in; dismissal slides it out back to y=-180 before closing.
+- The startup greeting uses the saved User preferred call name, then first name, then plain "Hello".
+- Home Message Mode has a smooth enter and exit animation: text drops from the top on enter (face lerps from center to left); text exits upward on dismiss (face returns to center).
+- Home Message Mode uses a circular close control at the top-right of the text area for manual dismissal.
+- NeXa messages count their 4-second preview timer only while fully visible on Home, not during enter or exit animation.
+- Messages Center rows support swipe-to-dismiss: swipe left or right 60px (with abs(dx)>abs(dy) guard) to remove a message; vertical movement is preserved for scroll.
+- The face animates offscreen during screen transitions: left for Menu, right for Clock, down for Control Center, up for Quick Shelf. The face is not drawn over completed non-Home screens.
+- Face Home includes a subtle HH:MM clock that stays separate from message and notification indicators.
+- NeXa Messages stores system and conversational messages separately from Notification Center reminders.
+- Settings includes a User profile page for first name, last name, and preferred call name.
+- Top message and notification indicators are custom drawn with Godot primitives instead of emoji icons.
+- Normal Reminder, Calendar, To Do, and Study prompts use Home Message Mode on Home or indicators/centers outside Home instead of full-screen popups.
+- The Home behavior foundation includes startup greeting and soft idle blink states with LED and sound cue placeholders only.
+- Screens return to Face Home after 30 seconds of inactivity, except Games; active text input is also respected.
+- Smart Study can suggest a quick break game after 30 seconds of break time and return from Games when focus resumes.
 - Display, Sound, Network, Remote, Diagnostics, Safety, About, and Exit NeXa pages are represented.
 - About shows NeXa ToTem project, author Andrzej Dul, DevDul, hardware, software, features, settings, and safety notes.
 - Safety and Exit NeXa actions are planned/safe only; the UI does not power off or reboot the Raspberry Pi.
