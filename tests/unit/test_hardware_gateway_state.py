@@ -81,6 +81,29 @@ class HardwareGatewayStateTests(unittest.TestCase):
             "joystick_y": 503,
         })
 
+    def test_distance_minus_one_is_no_valid_presence(self):
+        state = HardwareStateStore().update({"distance_cm": -1, "presence": True})
+        self.assertEqual(state["distance_cm"], -1.0)
+        self.assertFalse(state["distance_valid"])
+        self.assertFalse(state["presence_detected"])
+        self.assertEqual(state["presence_source"], "distance")
+
+    def test_positive_distance_is_presence(self):
+        state = HardwareStateStore().update({"distance_cm": 10, "presence": False})
+        self.assertTrue(state["distance_valid"])
+        self.assertTrue(state["presence_detected"])
+        self.assertEqual(state["presence_source"], "distance")
+
+    def test_missing_distance_uses_presence_fallback(self):
+        store = HardwareStateStore()
+        present = store.update({"presence": True})
+        absent = store.update({"presence": False})
+        self.assertFalse(present["distance_valid"])
+        self.assertTrue(present["presence_detected"])
+        self.assertEqual(present["presence_source"], "presence_flag")
+        self.assertFalse(absent["presence_detected"])
+        self.assertEqual(absent["presence_source"], "presence_flag")
+
 
 if __name__ == "__main__":
     unittest.main()

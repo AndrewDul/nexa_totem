@@ -59,6 +59,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     scripts_dir = project / "scripts"
     run_dev = REPO_ROOT / "scripts/run/run_godot_ui_dev.sh"
     run_with_api = REPO_ROOT / "scripts/run/run_godot_ui_with_api_dev.sh"
+    run_esp_mode = REPO_ROOT / "scripts/run/run_nexa_totem_esp_mode.sh"
     run_lcd = REPO_ROOT / "scripts/run/run_godot_ui_lcd.sh"
     run_api = REPO_ROOT / "scripts/run/run_diagnostics_api.py"
     live_api = REPO_ROOT / "system/services/diagnostics/live_api.py"
@@ -70,17 +71,27 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     todo_store = REPO_ROOT / "system/services/todo/todo_store.py"
     hardware_gateway_dir = REPO_ROOT / "system/services/hardware_gateway"
     hardware_state = hardware_gateway_dir / "hardware_state.py"
+    esp_pull_client = hardware_gateway_dir / "esp_pull_client.py"
     hardware_readme = hardware_gateway_dir / "README.md"
     hardware_dev_runner = REPO_ROOT / "scripts/run/run_hardware_gateway_dev.py"
+    esp_pull_runner = REPO_ROOT / "scripts/run/run_esp_pull_client_dev.py"
     hardware_api_check = REPO_ROOT / "scripts/test/check_hardware_gateway_api.py"
     network_dir = REPO_ROOT / "system/network"
     access_point_dir = network_dir / "access_point"
+    wifi_switch_dir = network_dir / "wifi_switch"
+    wifi_switch_plan = wifi_switch_dir / "wifi_switch_plan.py"
     ap_profile = access_point_dir / "ap_profile.py"
     setup_ap = REPO_ROOT / "scripts/network/setup_nexa_ap.py"
     rollback_ap = REPO_ROOT / "scripts/network/rollback_nexa_ap.py"
     safety_check = REPO_ROOT / "scripts/network/check_network_safety.py"
+    connect_esp = REPO_ROOT / "scripts/network/connect_to_esp_network.py"
+    reconnect_home = REPO_ROOT / "scripts/network/reconnect_home_wifi.py"
     network_ap_check = REPO_ROOT / "scripts/test/check_network_ap_safety.py"
+    esp_pull_check = REPO_ROOT / "scripts/test/check_esp_pull_mode.py"
+    wifi_switch_check = REPO_ROOT / "scripts/test/check_wifi_switch_safety.py"
+    esp_mode_launcher_check = REPO_ROOT / "scripts/test/check_esp_mode_launcher.py"
     esp8266_config = REPO_ROOT / "hardware/esp8266/nexa_totem_esp8266_config_example.h"
+    esp8266_notes = REPO_ROOT / "hardware/esp8266/nexa_totem_esp_server_mode_notes.md"
     api_client = scripts_dir / "diagnostics_api_client.gd"
     home_dir = scripts_dir / "home"
     home_messages_dir = home_dir / "messages"
@@ -110,14 +121,25 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     calendar_store_text = read_text(calendar_store)
     todo_store_text = read_text(todo_store)
     hardware_state_text = read_text(hardware_state)
+    esp_pull_client_text = read_text(esp_pull_client)
     hardware_dev_runner_text = read_text(hardware_dev_runner)
+    esp_pull_runner_text = read_text(esp_pull_runner)
+    run_esp_mode_text = read_text(run_esp_mode)
+    run_with_api_text = read_text(run_with_api)
     hardware_api_check_text = read_text(hardware_api_check)
+    wifi_switch_plan_text = read_text(wifi_switch_plan)
     ap_profile_text = read_text(ap_profile)
     setup_ap_text = read_text(setup_ap)
     rollback_ap_text = read_text(rollback_ap)
     safety_check_text = read_text(safety_check)
+    connect_esp_text = read_text(connect_esp)
+    reconnect_home_text = read_text(reconnect_home)
     network_ap_check_text = read_text(network_ap_check)
+    esp_pull_check_text = read_text(esp_pull_check)
+    wifi_switch_check_text = read_text(wifi_switch_check)
+    esp_mode_launcher_check_text = read_text(esp_mode_launcher_check)
     esp8266_config_text = read_text(esp8266_config)
+    esp8266_notes_text = read_text(esp8266_notes)
     design_tokens_text = read_text(design_tokens)
     nexa_message_text = read_text(nexa_message)
     message_queue_text = read_text(message_queue)
@@ -163,22 +185,47 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("hardware_gateway_folder", hardware_gateway_dir.exists(), "Hardware gateway folder exists.")
     add("hardware_gateway_readme", hardware_readme.exists(), "Hardware gateway README exists.")
     add("hardware_state_store", "class HardwareStateStore" in hardware_state_text, "HardwareStateStore exists.")
+    add("esp_pull_client", esp_pull_client.exists() and "class EspPullClient" in esp_pull_client_text, "EspPullClient exists.")
     add("run_hardware_gateway_dev", hardware_dev_runner.exists(), "Hardware gateway dev runner exists.")
+    add("run_esp_pull_client_dev", esp_pull_runner.exists() and "DEFAULT_ESP_STATE_URL" in esp_pull_runner_text, "ESP pull runner exists.")
+    add("run_nexa_totem_esp_mode", run_esp_mode.exists(), "NeXa ESP mode launcher exists.")
     add("check_hardware_gateway_api", hardware_api_check.exists(), "Hardware gateway API check exists.")
     add("network_folder", network_dir.exists(), "Network folder exists.")
     add("access_point_readme", (access_point_dir / "README.md").exists(), "Access point README exists.")
+    add("wifi_switch_folder", wifi_switch_dir.exists() and (wifi_switch_dir / "README.md").exists(), "Wi-Fi switch folder and README exist.")
+    add("wifi_switch_plan", wifi_switch_plan.exists() and "PREVIOUS_WIFI_CONNECTION_PATH" in wifi_switch_plan_text, "Wi-Fi switch plan exists.")
     add("setup_nexa_ap_script", setup_ap.exists(), "NeXa AP setup script exists.")
     add("rollback_nexa_ap_script", rollback_ap.exists(), "NeXa AP rollback script exists.")
     add("network_safety_script", safety_check.exists(), "Network safety check script exists.")
+    add("connect_esp_script", connect_esp.exists(), "Connect to ESP network script exists.")
+    add("reconnect_home_script", reconnect_home.exists(), "Reconnect home Wi-Fi script exists.")
     add("network_ap_safety_check", network_ap_check.exists(), "Network AP safety check exists.")
+    add("esp_pull_mode_check", esp_pull_check.exists(), "ESP pull mode check exists.")
+    add("wifi_switch_safety_check", wifi_switch_check.exists(), "Wi-Fi switch safety check exists.")
+    add("esp_mode_launcher_check", esp_mode_launcher_check.exists(), "ESP mode launcher check exists.")
     add("esp8266_config_example", esp8266_config.exists(), "ESP8266 config example exists.")
     add("network_default_dry_run", "dry_run" in setup_ap_text and "changed_network" in setup_ap_text and "No network changes were made." in setup_ap_text, "AP setup default dry-run is represented.")
     add("network_explicit_apply_flags", "--apply" in setup_ap_text and "--i-understand-this-may-disconnect-wifi" in setup_ap_text and "--force-wlan0-ap" in setup_ap_text, "AP setup explicit apply flags are represented.")
     add("network_rollback_represented", "--i-understand-this-changes-network" in rollback_ap_text and "connection delete" in rollback_ap_text and "NeXa-ToTem" in rollback_ap_text, "AP rollback is represented.")
     add("network_safety_warning", "wlan0 appears to be your current internet route" in safety_check_text and "may disconnect internet/SSH" in safety_check_text, "wlan0 internet safety warning exists.")
     add("network_ap_values", "NeXa-ToTem" in ap_profile_text and "10.42.0.1" in ap_profile_text and "http://10.42.0.1:8080/api/hardware" in ap_profile_text and "nexa12345" in ap_profile_text, "NeXa-ToTem SSID/IP/URL/password are represented.")
-    add("esp8266_template_values", "NEXA_WIFI_SSID" in esp8266_config_text and "NeXa-ToTem" in esp8266_config_text and "NEXA_PI_SERVER_URL" in esp8266_config_text, "ESP8266 config template values exist.")
+    add("esp_pull_values", "NeXa-ESP" in wifi_switch_plan_text and "192.168.4.1" in wifi_switch_plan_text and "http://192.168.4.1/api/state" in wifi_switch_plan_text, "NeXa-ESP SSID and ESP state URL are represented.")
+    add("wifi_switch_default_dry_run", "dry_run" in connect_esp_text and "No network changes were made." in connect_esp_text and "dry_run" in reconnect_home_text, "Wi-Fi switch scripts default to dry-run.")
+    add("wifi_switch_apply_flags", "--i-understand-this-will-disconnect-internet" in connect_esp_text and "--i-understand-this-changes-network" in reconnect_home_text, "Wi-Fi switch apply warning flags exist.")
+    add("previous_wifi_path", "var/data/network/previous_wifi_connection.json" in wifi_switch_plan_text and "previous_wifi_connection_path" in connect_esp_text, "Previous Wi-Fi connection save path exists.")
+    add("esp_pull_api_bridge", "NEXA_HARDWARE_MODE" in live_api_text and "pull_esp_server" in live_api_text and "/api/hardware/pull-once" in live_api_text, "Optional ESP pull API bridge exists.")
+    add("esp8266_template_values", "NEXA_WIFI_SSID" in esp8266_config_text and "NeXa-ESP" in esp8266_config_text and "NEXA_ESP_STATE_URL" in esp8266_config_text, "ESP8266 server mode config template values exist.")
+    add("esp8266_server_notes", esp8266_notes.exists() and "GET /api/state" in esp8266_notes_text and "192.168.4.1" in esp8266_notes_text, "ESP8266 server mode notes exist.")
     add("network_safety_check_no_apply", "--apply" not in network_ap_check_text and "changed_network" in network_ap_check_text, "Network AP safety check does not run apply commands.")
+    add("esp_pull_check_no_wifi_change", "changed_network" in esp_pull_check_text and "no Wi-Fi changes" in esp_pull_check_text, "ESP pull mode check does not change Wi-Fi.")
+    add("wifi_switch_check_no_apply", "--apply" not in wifi_switch_check_text and "changed_network" in wifi_switch_check_text, "Wi-Fi switch safety check does not run apply commands.")
+    add("esp_mode_launcher_confirmation", "CONFIRM_NEXA_ESP_WIFI_SWITCH" in run_esp_mode_text and '!= "RUN"' in run_esp_mode_text, "ESP mode launcher requires confirmation env var.")
+    add("esp_mode_launcher_connect_apply", "connect_to_esp_network.py --apply --i-understand-this-will-disconnect-internet" in run_esp_mode_text, "ESP mode launcher connects to NeXa-ESP only through apply-gated script.")
+    add("esp_mode_launcher_pull_env", "export NEXA_HARDWARE_MODE=pull_esp_server" in run_esp_mode_text and "export NEXA_ESP_STATE_URL=http://192.168.4.1/api/state" in run_esp_mode_text and "export NEXA_ESP_POLL_INTERVAL_SECONDS=0.2" in run_esp_mode_text, "ESP mode launcher exports pull-mode environment.")
+    add("esp_mode_launcher_safe_launcher", "run_godot_ui_with_api_dev.sh" in run_esp_mode_text, "ESP mode launcher uses the safe Godot API launcher.")
+    add("esp_mode_launcher_cleanup", "trap cleanup EXIT INT TERM" in run_esp_mode_text and "reconnect_home_wifi.py --apply --i-understand-this-changes-network" in run_esp_mode_text, "ESP mode launcher reconnect cleanup is represented.")
+    add("normal_launcher_no_wifi_switch", "connect_to_esp_network.py" not in run_with_api_text and "reconnect_home_wifi.py" not in run_with_api_text, "Normal dev launcher does not switch Wi-Fi.")
+    add("esp_mode_launcher_check_no_apply", "CONFIRM_NEXA_ESP_WIFI_SWITCH" in esp_mode_launcher_check_text and "--apply" in esp_mode_launcher_check_text and "changed_network" in esp_mode_launcher_check_text, "ESP mode launcher check only inspects/no-confirm path.")
     add("network_docs_warn_disconnect", "may disconnect internet/SSH" in read_text(REPO_ROOT / "system/network/README.md") and "rollback_nexa_ap.py" in read_text(REPO_ROOT / "docs/troubleshooting.md"), "Network docs warn about internet/SSH risk and rollback.")
     add("api_localhost", "127.0.0.1" in live_api_text and "8769" in live_api_text, "API binds localhost port 8769.")
     add("home_system_folder_structure", all(path.exists() for path in [home_dir, home_messages_dir, home_behaviors_dir, system_scripts_dir, system_notifications_dir, assets_dir, icons_dir]), "Home/system/assets folder structure exists.")
@@ -253,8 +300,11 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("environment_screen", 'nav.current_screen = "Environment"' in main_text and "func _draw_environment" in main_text, "Environment screen exists.")
     add("hardware_status_indicator", "Local network connected" in main_text and "Local network disconnected" in main_text and "func _draw_hardware_status_indicator" in main_text, "Local network status indicator exists.")
     add("hardware_polling_interval", "hardware_poll_interval_seconds := 1.0" in main_text and 'api.request_get("/api/hardware/state")' in main_text and "hardware_poll_elapsed += delta" in main_text, "Hardware polling runs around once per second.")
-    add("presence_foundation", "last_seen_user_at" in main_text and "hardware_presence_active" in main_text and "presence_absence_seconds" in main_text and "presence_show_clock_after_seconds := 30.0" in main_text and "func _update_presence_face_clock" in main_text, "Presence Face/Clock foundation exists.")
-    add("joystick_foundation", "hardware_last_joystick" in main_text and "joystick_repeat_delay_seconds := 0.35" in main_text and "joystick_select_cooldown_seconds := 0.5" in main_text and "func _handle_hardware_joystick" in main_text, "Joystick debounce foundation exists.")
+    add("presence_foundation", "last_seen_user_at" in main_text and "hardware_presence_active" in main_text and "presence_absence_seconds" in main_text and "presence_show_clock_after_seconds := 3.0" in main_text and "presence_show_face_after_seconds := 0.5" in main_text and "func _is_distance_valid_for_presence" in main_text and "func _update_presence_face_clock" in main_text, "Presence Face/Clock foundation exists.")
+    add("joystick_foundation", "hardware_last_joystick" in main_text and "joystick_repeat_delay_seconds := 0.28" in main_text and "joystick_select_cooldown_seconds := 0.55" in main_text and "joystick_select_armed" in main_text and "func _dispatch_nexa_input_action" in main_text and "func _handle_hardware_joystick" in main_text, "Joystick debounce foundation exists.")
+    add("hardware_presence_derived_fields", "distance_valid" in hardware_state_text and "presence_detected" in hardware_state_text and "presence_source" in hardware_state_text, "Hardware state derives distance_valid and presence_detected.")
+    add("settings_exit_nexa_safe", "Exit NeXa" in main_text and "This closes NeXa ToTem only. Raspberry Pi will stay on." in main_text and "get_tree().quit()" in main_text, "Settings Exit NeXa closes the UI only.")
+    add("settings_exit_no_power_commands", all(term not in main_text.lower() for term in ["shutdown", "poweroff", "reboot", "halt", "power off"]), "Settings Exit NeXa does not use OS power commands.")
     banned_network_terms = ["nmcli", "hostapd", "dnsmasq", "iptables", "nft ", "systemctl restart NetworkManager", "ifconfig", "iw ", "ip route"]
     new_script_text = hardware_dev_runner_text + "\n" + hardware_api_check_text
     add("hardware_scripts_no_network_config_commands", all(term not in new_script_text for term in banned_network_terms), "Hardware scripts do not contain network configuration commands.")

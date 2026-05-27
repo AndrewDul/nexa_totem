@@ -51,13 +51,15 @@ The UI must not run hardware checks directly. Later it should read from the Pyth
 
 The current prototype now reads live diagnostics through the local Python API at `127.0.0.1:8769`.
 
-The UI also polls `/api/hardware/state` about once per second for local hardware state.
+The UI polls `/api/hardware/state` for local hardware state. Normal development uses about once per second. ESP mode can lower this with `NEXA_ESP_POLL_INTERVAL_SECONDS=0.2` so joystick and ultrasonic updates feel responsive.
 
 "Local network connected" means NeXa is receiving recent ESP8266 hardware data. It does not mean the internet is connected.
 
 The top-left local network indicator shows connected or disconnected based on fresh ESP8266 data.
 
 The Environment screen shows temperature, humidity, pressure, gas resistance, air status, and advice when live data is available.
+
+Distance `-1` means no valid ultrasonic echo. Distance above zero means a valid object/person distance was measured. Face/Clock switching uses a small stable delay so one bad reading does not flicker the UI.
 
 The UI does not configure Wi-Fi, routing, DHCP, hotspot, or access point settings.
 
@@ -161,8 +163,10 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Normal Reminder, Calendar, To Do, and Study prompts use Home Message Mode on Home or indicators/centers outside Home instead of full-screen popups.
 - The Home behavior foundation includes startup greeting and soft idle blink states with LED and sound cue placeholders only.
 - Screens return to Face Home after 30 seconds of inactivity, except Games; active text input is also respected.
+- Hardware absence can show Clock after `presence_show_clock_after_seconds`, currently 3 seconds for the demo.
+- Joystick repeat is controlled by `joystick_repeat_delay_seconds`, currently 0.28 seconds. Select requires returning to CENTER before it can trigger again.
 - Smart Study can suggest a quick break game after 30 seconds of break time and return from Games when focus resumes.
 - Display, Sound, Network, Remote, Diagnostics, Safety, About, and Exit NeXa pages are represented.
 - About shows NeXa ToTem project, author Andrzej Dul, DevDul, hardware, software, features, settings, and safety notes.
-- Safety and Exit NeXa actions are planned/safe only; the UI does not power off or reboot the Raspberry Pi.
+- Settings Exit NeXa closes the NeXa UI/runtime only. It does not power off the Raspberry Pi.
 - Settings stay within the fixed 640x480 window and use the existing scroll support when content is larger than the panel.

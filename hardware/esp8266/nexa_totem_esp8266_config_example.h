@@ -1,8 +1,10 @@
 #ifndef NEXA_TOTEM_ESP8266_CONFIG_EXAMPLE_H
 #define NEXA_TOTEM_ESP8266_CONFIG_EXAMPLE_H
 
-#define NEXA_WIFI_SSID "NeXa-ToTem"
+#define NEXA_WIFI_SSID "NeXa-ESP"
 #define NEXA_WIFI_PASSWORD "nexa12345"
-#define NEXA_PI_SERVER_URL "http://10.42.0.1:8080/api/hardware"
+#define NEXA_ESP_IP "192.168.4.1"
+#define NEXA_ESP_STATE_PATH "/api/state"
+#define NEXA_ESP_STATE_URL "http://192.168.4.1/api/state"
 
 #endif

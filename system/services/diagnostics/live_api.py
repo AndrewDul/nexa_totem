@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -31,6 +32,7 @@ from system.services.reminders import reminders_store
 from system.services.calendar import calendar_store
 from system.services.todo import todo_store
 from system.services.hardware_gateway import latest_hardware_state
+from system.services.hardware_gateway.esp_pull_client import DEFAULT_ESP_STATE_URL, EspPullClient
 from system.services.hardware_gateway.hardware_dashboard import render_dashboard
 
 
@@ -38,6 +40,10 @@ HOST = "127.0.0.1"
 PORT = 8769
 STATE = LiveState()
 PREVIEW = CameraPreviewWorker(STATE)
+HARDWARE_MODE = os.environ.get("NEXA_HARDWARE_MODE", "push_pi_server")
+ESP_STATE_URL = os.environ.get("NEXA_ESP_STATE_URL", DEFAULT_ESP_STATE_URL)
+ESP_TIMEOUT_SECONDS = float(os.environ.get("NEXA_ESP_TIMEOUT_SECONDS", "1.0"))
+ESP_CLIENT = EspPullClient(url=ESP_STATE_URL, timeout_seconds=ESP_TIMEOUT_SECONDS)
 
 TTL_SECONDS = {
     "overview": 2,
@@ -126,7 +132,15 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
             elif path == "/hardware-dashboard":
                 self._html(render_dashboard(latest_hardware_state.as_dict()))
             elif path == "/api/hardware/state":
-                self._json({"status": "ok", "state": latest_hardware_state.as_dict()})
+                source = HARDWARE_MODE
+                if HARDWARE_MODE == "pull_esp_server":
+                    pull_result = ESP_CLIENT.fetch_and_update(latest_hardware_state)
+                    source = str(pull_result.get("source", "esp_pull"))
+                self._json({"status": "ok", "source": source, "state": latest_hardware_state.as_dict()})
+            elif path == "/api/hardware/pull-once":
+                url = _query_str(query, "url", DEFAULT_ESP_STATE_URL)
+                client = EspPullClient(url=url, timeout_seconds=1.0)
+                self._json(client.fetch_and_update(latest_hardware_state))
             elif path == "/api/study/overview":
                 self._json(study_store.overview())
             elif path == "/api/study/stats":

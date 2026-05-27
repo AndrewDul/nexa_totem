@@ -102,3 +102,53 @@ Safety rule:
 Do not apply AP mode while relying on `wlan0` SSH unless you know what you are doing.
 
 Prefer Ethernet, USB tethering, or a second Wi-Fi adapter for internet while `wlan0` is used as the NeXa-ToTem AP.
+
+## ESP Server Mode disconnects internet
+
+Problem:
+In ESP Server Mode, the Raspberry Pi connects to `NeXa-ESP` so it can pull hardware state from `http://192.168.4.1/api/state`.
+
+Cause:
+The Pi usually has one built-in Wi-Fi adapter. While that adapter is connected to `NeXa-ESP`, it is not connected to normal home Wi-Fi.
+
+Fix after demo:
+Run:
+
+`python3 scripts/network/reconnect_home_wifi.py --apply --i-understand-this-changes-network`
+
+If reconnect fails:
+Use the Raspberry Pi network UI or terminal to reconnect your normal home Wi-Fi manually.
+
+Safety rule:
+Dry-run first with:
+
+`python3 scripts/network/connect_to_esp_network.py`
+
+Only apply the ESP Wi-Fi switch when you are ready for internet/SSH to disconnect during the demo.
+
+## ESP mode launcher is missing
+
+Problem:
+`bash scripts/run/run_nexa_totem_esp_mode.sh` does not exist.
+
+Fix:
+Update from the sprint that added the ESP mode launcher.
+
+Start ESP mode with:
+
+`CONFIRM_NEXA_ESP_WIFI_SWITCH=RUN bash scripts/run/run_nexa_totem_esp_mode.sh`
+
+This intentionally disconnects normal Wi-Fi/internet while NeXa runs.
+
+## ESP mode does not reconnect home Wi-Fi
+
+Problem:
+NeXa ESP mode closed, but the Raspberry Pi did not reconnect to home Wi-Fi.
+
+Fix:
+Run:
+
+`python3 scripts/network/reconnect_home_wifi.py --apply --i-understand-this-changes-network`
+
+If it still does not connect:
+Use the Raspberry Pi network menu or terminal to reconnect your normal home Wi-Fi manually.

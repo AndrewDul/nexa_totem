@@ -92,7 +92,7 @@ const SETTINGS_TILES := [
 	{"icon": "▦", "title": "Diagnostics", "subtitle": "Logs"},
 	{"icon": "□", "title": "Safety", "subtitle": "Exit"},
 	{"icon": "i", "title": "About", "subtitle": "NeXa"},
-	{"icon": "×", "title": "Exit NeXa", "subtitle": "Planned"}
+	{"icon": "×", "title": "Exit NeXa", "subtitle": "Close UI"}
 ]
 const COLOR_OPTIONS := ["Blue", "Sky Blue", "Cyan", "White", "Warm White", "Yellow", "Orange", "Red", "Pink", "Purple", "Green", "Mint", "Brown", "Gold", "Grey", "Graphite", "Black"]
 const PRESET_OPTIONS := ["NeXa Blue", "Apple Dark", "Warm Desk", "Focus Green", "Night Red", "Soft Pink", "Minimal White"]
@@ -133,13 +133,26 @@ var hardware_poll_interval_seconds := 1.0
 var last_seen_user_at := 0.0
 var hardware_presence_active := false
 var presence_absence_seconds := 0.0
-var presence_show_clock_after_seconds := 30.0
-var clock_shown_for_absence := false
+var presence_valid_elapsed := 0.0
+var presence_invalid_elapsed := 0.0
+var presence_show_face_after_seconds := 0.5
+var presence_show_clock_after_seconds := 3.0
+var presence_clock_active_from_hardware := false
 var hardware_last_joystick := "CENTER"
-var hardware_last_joystick_action_at := 0.0
-var joystick_repeat_delay_seconds := 0.35
-var joystick_select_cooldown_seconds := 0.5
+var hardware_current_joystick := "CENTER"
+var hardware_joystick_stable_value := "CENTER"
+var hardware_joystick_candidate := "CENTER"
+var hardware_joystick_candidate_count := 0
+var joystick_repeat_delay_seconds := 0.28
+var joystick_select_cooldown_seconds := 0.55
+var joystick_direction_min_stable_samples := 1
+var joystick_last_action_at := -999.0
+var joystick_last_select_at := -999.0
+var joystick_requires_center_release_for_select := true
+var joystick_select_armed := true
 var hardware_menu_focus_index := 0
+var settings_exit_confirm_open := false
+var settings_exit_confirm_selected := "cancel"
 var control_center_refresh_pending := false
 var brightness_percent := 65
 var sound_percent := 50
@@ -386,6 +399,7 @@ var study_break_not_now_segment_id := 0
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDTH, HEIGHT)
+	_apply_runtime_environment()
 	panel_data = diagnostics_data.load_panel_data()
 	add_child(api)
 	api.data_received.connect(_on_api_data_received)
@@ -397,6 +411,13 @@ func _ready() -> void:
 	api.request_get("/api/settings")
 	api.request_get("/api/hardware/state")
 	_request_redraw()
+
+func _apply_runtime_environment() -> void:
+	var poll_text := OS.get_environment("NEXA_ESP_POLL_INTERVAL_SECONDS")
+	if poll_text != "":
+		var poll_value := float(poll_text)
+		if poll_value >= 0.1 and poll_value <= 5.0:
+			hardware_poll_interval_seconds = poll_value
 
 func _process(delta: float) -> void:
 	elapsed += delta
@@ -559,6 +580,15 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if nav.current_screen == "Games" and _handle_games_action_event(event):
 		return
+	if nav.current_screen == "Settings" and settings_exit_confirm_open:
+		if event.keycode == KEY_ESCAPE:
+			_close_settings_exit_confirm()
+		elif event.keycode == KEY_LEFT or event.keycode == KEY_RIGHT:
+			_handle_settings_input_action("nexa_left")
+		elif event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+			_handle_settings_input_action("nexa_accept")
+		_request_redraw()
+		return
 	if event.keycode == KEY_LEFT and nav.current_screen == "Face Home":
 		_open_menu()
 	elif event.keycode == KEY_RIGHT and nav.current_screen == "Face Home":
@@ -568,6 +598,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif event.keycode == KEY_ESCAPE:
 		if text_input_open:
 			_close_text_input()
+			_request_redraw()
+			return
+		if nav.current_screen == "Settings" and settings_exit_confirm_open:
+			_close_settings_exit_confirm()
 			_request_redraw()
 			return
 		if nav.current_screen == "Study" and study_current_page != "home":
@@ -844,6 +878,9 @@ func _open_notification_source(notification: Dictionary) -> void:
 		return
 
 func _handle_settings_tap(position: Vector2) -> void:
+	if settings_exit_confirm_open:
+		_handle_settings_exit_confirm_tap(position)
+		return
 	if settings_dropdown_open:
 		_handle_settings_dropdown_tap(position)
 		return
@@ -856,6 +893,9 @@ func _handle_settings_tap(position: Vector2) -> void:
 			if rect.has_point(position):
 				var tile: Dictionary = SETTINGS_TILES[index] as Dictionary
 				var title: String = str(tile["title"])
+				if title == "Exit NeXa":
+					_open_settings_exit_confirm()
+					return
 				settings_current_page = _settings_page_id(title)
 				settings_scroll_y = 0.0
 				if settings_current_page == "privacy":
@@ -895,6 +935,43 @@ func _handle_settings_detail_tap(position: Vector2) -> void:
 			var row: Dictionary = rows[index] as Dictionary
 			_apply_settings_row(row)
 			return
+
+func _open_settings_exit_confirm() -> void:
+	settings_exit_confirm_open = true
+	settings_exit_confirm_selected = "cancel"
+	_request_redraw()
+
+func _close_settings_exit_confirm() -> void:
+	settings_exit_confirm_open = false
+	settings_exit_confirm_selected = "cancel"
+	_request_redraw()
+
+func _handle_settings_exit_confirm_tap(position: Vector2) -> void:
+	if Rect2(162, 310, 138, 36).has_point(position):
+		_close_settings_exit_confirm()
+	elif Rect2(340, 310, 138, 36).has_point(position):
+		_exit_nexa_runtime()
+
+func _handle_settings_input_action(action_name: String) -> void:
+	if settings_exit_confirm_open:
+		if action_name == "nexa_left" or action_name == "nexa_right":
+			settings_exit_confirm_selected = "exit" if settings_exit_confirm_selected == "cancel" else "cancel"
+		elif action_name == "nexa_back":
+			_close_settings_exit_confirm()
+		elif action_name == "nexa_accept":
+			if settings_exit_confirm_selected == "exit":
+				_exit_nexa_runtime()
+			else:
+				_close_settings_exit_confirm()
+		_request_redraw()
+		return
+	if action_name == "nexa_back":
+		_settings_back()
+	elif action_name == "nexa_accept" and settings_current_page == "home":
+		_open_settings_exit_confirm()
+
+func _exit_nexa_runtime() -> void:
+	get_tree().quit()
 
 func _handle_quick_shelf_panel_tap(position: Vector2) -> void:
 	var tiles: Array = _settings_enabled_quick_shelf()
@@ -2185,6 +2262,9 @@ func _settings_update_many(updates: Array) -> void:
 	_request_redraw()
 
 func _apply_settings_row(row: Dictionary) -> void:
+	if str(row.get("action", "")) == "exit_nexa":
+		_open_settings_exit_confirm()
+		return
 	var section: String = str(row.get("section", ""))
 	var key: String = str(row.get("key", ""))
 	var kind: String = str(row.get("kind", "toggle"))
@@ -2409,11 +2489,9 @@ func _settings_rows_for_page(page: String) -> Array:
 		]
 	if page == "safety" or page == "exit_nexa":
 		return [
-			{"title": "Exit NeXa", "section": "safety", "key": "confirm_exit", "kind": "toggle", "default": true, "subtitle": "Exit UI planned"},
+			{"title": "Exit NeXa", "action": "exit_nexa", "subtitle": "Close UI"},
 			{"title": "Restart UI", "section": "safety", "key": "confirm_exit", "kind": "toggle", "default": true, "subtitle": "Planned"},
-			{"title": "Restart API", "section": "safety", "key": "confirm_exit", "kind": "toggle", "default": true, "subtitle": "Planned"},
-			{"title": "Reboot Raspberry Pi", "section": "safety", "key": "confirm_power_actions", "kind": "toggle", "default": true, "subtitle": "Planned only"},
-			{"title": "Power off Raspberry Pi", "section": "safety", "key": "confirm_power_actions", "kind": "toggle", "default": true, "subtitle": "Planned only"}
+			{"title": "Restart API", "section": "safety", "key": "confirm_exit", "kind": "toggle", "default": true, "subtitle": "Planned"}
 		]
 	if page == "about":
 		return [
@@ -3396,23 +3474,49 @@ func _update_inactivity(delta: float) -> void:
 func _reset_user_activity() -> void:
 	inactivity_elapsed = 0.0
 	last_seen_user_at = elapsed
-	if clock_shown_for_absence and nav.current_screen == "Clock":
-		clock_shown_for_absence = false
+	if presence_clock_active_from_hardware and nav.current_screen == "Clock":
+		presence_clock_active_from_hardware = false
+
+func _is_distance_valid_for_presence(value) -> bool:
+	if value == null:
+		return false
+	if (value is int) or (value is float):
+		return float(value) > 0.0
+	var text := str(value)
+	if text == "":
+		return false
+	return float(text) > 0.0
+
+func _hardware_has_active_modal() -> bool:
+	return settings_exit_confirm_open or notification_detail_modal_open or reminders_due_modal_open or calendar_due_modal_open or todo_due_modal_open
+
+func _hardware_presence_from_state() -> bool:
+	if not hardware_connected or hardware_stale:
+		return false
+	if str(hardware_state_data.get("presence_source", "")) == "presence_flag":
+		return bool(hardware_state_data.get("presence_detected", false))
+	if hardware_state_data.has("distance_cm"):
+		return _is_distance_valid_for_presence(hardware_state_data.get("distance_cm"))
+	return bool(hardware_state_data.get("presence_detected", hardware_state_data.get("presence", false)))
 
 func _update_presence_face_clock(delta: float) -> void:
-	hardware_presence_active = hardware_connected and not hardware_stale and bool(hardware_state_data.get("presence", false))
+	hardware_presence_active = _hardware_presence_from_state()
 	if hardware_presence_active:
+		presence_valid_elapsed += delta
+		presence_invalid_elapsed = 0.0
 		presence_absence_seconds = 0.0
 		last_seen_user_at = elapsed
-		if clock_shown_for_absence and nav.current_screen == "Clock":
-			clock_shown_for_absence = false
+		if presence_clock_active_from_hardware and nav.current_screen == "Clock" and presence_valid_elapsed >= presence_show_face_after_seconds:
+			presence_clock_active_from_hardware = false
 			_go_home()
 		return
-	presence_absence_seconds += delta
-	if nav.current_screen != "Face Home" or home_message_active or text_input_open or transition_active:
+	presence_invalid_elapsed += delta
+	presence_valid_elapsed = 0.0
+	presence_absence_seconds = presence_invalid_elapsed
+	if nav.current_screen != "Face Home" or home_message_active or text_input_open or transition_active or _hardware_has_active_modal():
 		return
-	if presence_absence_seconds >= presence_show_clock_after_seconds:
-		clock_shown_for_absence = true
+	if presence_invalid_elapsed >= presence_show_clock_after_seconds:
+		presence_clock_active_from_hardware = true
 		_open_clock()
 
 func _sync_notification_policy_after_rebuild() -> void:
@@ -4714,42 +4818,79 @@ func _handle_hardware_state_payload(payload: Dictionary) -> void:
 
 func _handle_hardware_joystick() -> void:
 	var joystick := str(hardware_state_data.get("joystick", "UNKNOWN")).to_upper()
-	if joystick == "CENTER" or joystick == "UNKNOWN":
+	if not (joystick in ["CENTER", "LEFT", "RIGHT", "UP", "DOWN", "SELECT", "UNKNOWN"]):
+		joystick = "UNKNOWN"
+	hardware_current_joystick = joystick
+	if joystick == "CENTER":
+		hardware_last_joystick = joystick
+		hardware_joystick_stable_value = "CENTER"
+		hardware_joystick_candidate = "CENTER"
+		hardware_joystick_candidate_count = 0
+		joystick_select_armed = true
+		return
+	if joystick == "UNKNOWN" or text_input_open or (_hardware_has_active_modal() and not settings_exit_confirm_open):
 		hardware_last_joystick = joystick
 		return
-	var cooldown := joystick_select_cooldown_seconds if joystick == "SELECT" else joystick_repeat_delay_seconds
-	if elapsed - hardware_last_joystick_action_at < cooldown:
-		hardware_last_joystick = joystick
+	if joystick != hardware_joystick_candidate:
+		hardware_joystick_candidate = joystick
+		hardware_joystick_candidate_count = 1
+	else:
+		hardware_joystick_candidate_count += 1
+	if hardware_joystick_candidate_count < joystick_direction_min_stable_samples:
 		return
-	hardware_last_joystick_action_at = elapsed
+	hardware_joystick_stable_value = joystick
+	if joystick == "SELECT":
+		if joystick_requires_center_release_for_select and not joystick_select_armed:
+			return
+		if elapsed - joystick_last_select_at < joystick_select_cooldown_seconds:
+			return
+		joystick_last_select_at = elapsed
+		joystick_select_armed = false
+		hardware_last_joystick = joystick
+		_dispatch_nexa_input_action("nexa_accept")
+		return
+	var action_name := "nexa_" + joystick.to_lower()
+	var changed_direction := joystick != hardware_last_joystick
+	if not changed_direction and elapsed - joystick_last_action_at < joystick_repeat_delay_seconds:
+		return
+	joystick_last_action_at = elapsed
 	hardware_last_joystick = joystick
-	# This maps ESP joystick values to the current UI helpers without faking key events.
+	_dispatch_nexa_input_action(action_name)
+
+func _dispatch_nexa_input_action(action_name: String) -> void:
+	if text_input_open or transition_active or (_hardware_has_active_modal() and not settings_exit_confirm_open):
+		return
+	_reset_user_activity()
 	if nav.current_screen == "Face Home":
-		if joystick == "LEFT":
+		if action_name == "nexa_left":
 			_open_menu()
-		elif joystick == "RIGHT":
+		elif action_name == "nexa_right":
 			_open_clock()
-		elif joystick == "DOWN":
+		elif action_name == "nexa_down":
 			_open_control_center()
-		elif joystick == "UP":
+		elif action_name == "nexa_up":
 			_open_quick_shelf()
-		elif joystick == "SELECT" and home_message_active:
+		elif action_name == "nexa_accept" and home_message_active:
 			if not home_message_actions.is_empty():
 				_activate_home_message_action(str((home_message_actions[0] as Dictionary).get("id", "")))
-	elif nav.current_screen == "Clock" and joystick != "CENTER":
+			else:
+				_start_home_message_exit(true)
+	elif nav.current_screen == "Clock" and action_name != "nexa_accept":
 		_go_home()
 	elif nav.current_screen == "Menu":
-		if joystick == "LEFT":
+		if action_name == "nexa_left":
 			hardware_menu_focus_index = maxi(0, hardware_menu_focus_index - 1)
-		elif joystick == "RIGHT":
+		elif action_name == "nexa_right":
 			hardware_menu_focus_index = mini(MENU_TILES.size() - 1, hardware_menu_focus_index + 1)
-		elif joystick == "UP":
+		elif action_name == "nexa_up":
 			hardware_menu_focus_index = maxi(0, hardware_menu_focus_index - 2)
-		elif joystick == "DOWN":
+		elif action_name == "nexa_down":
 			hardware_menu_focus_index = mini(MENU_TILES.size() - 1, hardware_menu_focus_index + 2)
-		elif joystick == "SELECT":
+		elif action_name == "nexa_accept":
 			_activate_menu_tile(hardware_menu_focus_index)
 		_request_redraw()
+	elif nav.current_screen == "Settings":
+		_handle_settings_input_action(action_name)
 
 func _activate_menu_tile(index: int) -> void:
 	if index < 0 or index >= MENU_TILES.size():
@@ -5313,6 +5454,7 @@ func _draw_environment() -> void:
 		{"title": "Pressure", "value": _hardware_value("pressure_hpa", " hPa")},
 		{"title": "Gas resistance", "value": _hardware_value("gas_kohms", " kΩ")},
 		{"title": "Air status", "value": air_status.capitalize()},
+		{"title": "Distance", "value": _hardware_distance_label()},
 		{"title": "Advice", "value": str(hardware_state_data.get("advice", "Waiting for live data"))}
 	]
 	for index in range(cards.size()):
@@ -5321,13 +5463,19 @@ func _draw_environment() -> void:
 		_draw_tile(rect, false)
 		_draw_text(str(item["title"]), rect.position + Vector2(14, 22), 11, ThemeScript.TEXT_MUTED)
 		_draw_text(_short_text(str(item["value"]), 26), rect.position + Vector2(14, 48), 18 if index < 4 else 15, accent if index >= 4 else ThemeScript.TEXT)
-	_draw_text("Last seen " + hardware_last_seen_at, Vector2(48, 392), 11, ThemeScript.TEXT_MUTED)
+	_draw_text("Last seen " + hardware_last_seen_at, Vector2(48, 432), 11, ThemeScript.TEXT_MUTED)
 
 func _hardware_value(key: String, suffix: String) -> String:
 	var value = hardware_state_data.get(key, null)
 	if value == null:
 		return "Waiting"
 	return str(value) + suffix
+
+func _hardware_distance_label() -> String:
+	var value = hardware_state_data.get("distance_cm", null)
+	if not _is_distance_valid_for_presence(value):
+		return "No valid echo"
+	return str(value) + " cm"
 
 func _draw_control_center() -> void:
 	if CONTROL_CENTER_SAFE_MODE:
@@ -5792,6 +5940,8 @@ func _draw_settings() -> void:
 	_draw_scrollbar(_settings_scroll_rect(), settings_scroll_y, _settings_content_height())
 	if settings_dropdown_open:
 		_draw_settings_dropdown()
+	if settings_exit_confirm_open:
+		_draw_settings_exit_confirm_modal()
 
 func _draw_settings_home() -> void:
 	var view_rect: Rect2 = _settings_scroll_rect()
@@ -5842,7 +5992,15 @@ func _draw_settings_detail_page() -> void:
 	if settings_current_page == "user":
 		_draw_text_if_visible(settings_status_text, Vector2(50, 330 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
 	if settings_current_page == "safety" or settings_current_page == "exit_nexa":
-		_draw_text_if_visible("Exit NeXa? Cancel or Exit UI planned only.", Vector2(50, 438 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
+		_draw_text_if_visible("Exit NeXa closes this UI only.", Vector2(50, 438 - settings_scroll_y), view_rect, 11, ThemeScript.TEXT_DIM)
+
+func _draw_settings_exit_confirm_modal() -> void:
+	draw_rect(Rect2(0, 0, WIDTH, HEIGHT), Color(0, 0, 0, 0.58), true)
+	_draw_card(Rect2(112, 162, 416, 210), Color(0.07, 0.08, 0.10, 0.98), 18.0)
+	_draw_centered_text("Exit NeXa?", 320.0, 210.0, 22, ThemeScript.TEXT)
+	_draw_centered_text("This closes NeXa ToTem only. Raspberry Pi will stay on.", 320.0, 252.0, 12, ThemeScript.TEXT_MUTED)
+	_draw_button(Rect2(162, 310, 138, 36), "Cancel", settings_exit_confirm_selected == "cancel")
+	_draw_button(Rect2(340, 310, 138, 36), "Exit", settings_exit_confirm_selected == "exit")
 
 func _draw_settings_row(rect: Rect2, title: String, value: String, active: bool) -> void:
 	_draw_tile(rect, active)

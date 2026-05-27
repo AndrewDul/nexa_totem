@@ -719,3 +719,47 @@ The hotspot apply step is manual because it can disconnect internet/SSH.
 The current sprint does not automatically change Wi-Fi, NetworkManager, routing, DHCP, or hotspot settings.
 
 Internet is optional for the hardware system; ESP8266 only needs the local NeXa-ToTem network.
+
+## 2026-05-27 — ESP Server Mode and Wi-Fi Switch Foundation
+
+I changed the coursework hardware direction so ESP8266 can act as the local Wi-Fi server.
+
+ESP8266 will create `NeXa-ESP` and expose `/api/state` at `192.168.4.1`.
+
+Raspberry Pi can connect to `NeXa-ESP` and pull hardware state from the ESP.
+
+I kept the Raspberry Pi hardware gateway server as fallback push mode.
+
+I added safe Wi-Fi switch scripts that default to dry-run.
+
+The switch scripts can save the previous Wi-Fi connection before joining `NeXa-ESP`.
+
+A reconnect script can return to the saved home Wi-Fi after NeXa is closed.
+
+Real switching is manual/apply-gated because it can disconnect internet/SSH.
+
+## 2026-05-27 — ESP Mode Launcher
+
+I added the missing ESP mode launcher.
+
+Starting NeXa with `CONFIRM_NEXA_ESP_WIFI_SWITCH=RUN` switches Raspberry Pi from normal Wi-Fi to `NeXa-ESP`.
+
+The launcher starts NeXa in `pull_esp_server` mode and pulls `http://192.168.4.1/api/state`.
+
+On exit, the launcher tries to reconnect the previous home Wi-Fi.
+
+The normal development launcher does not switch Wi-Fi.
+
+## 2026-05-27 — Hardware Presence, Joystick Reliability and Safe Exit
+
+I improved ESP pull polling for joystick responsiveness.
+
+I changed distance/presence handling so valid distance values above zero mean user/object detected, while `-1` or null means no valid echo.
+
+I added small stable timing to avoid flickering between Face and Clock.
+
+I added derived hardware fields for `distance_valid` and `presence_detected`.
+
+I improved joystick repeat/select handling so menu control is more reliable.
+
+I added Settings -> Exit NeXa, which closes the NeXa UI/runtime only and does not shut down Raspberry Pi.

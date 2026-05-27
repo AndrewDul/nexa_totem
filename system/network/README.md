@@ -1,10 +1,11 @@
 This folder contains safe network setup helpers for NeXa ToTem.
 
-The current work prepares a local NeXa-ToTem Wi-Fi access point that the ESP8266 can join. The scripts start in dry-run mode and do not change Raspberry Pi networking unless the user runs them with explicit apply flags.
+The scripts start in dry-run mode and do not change Raspberry Pi networking unless the user runs them with explicit apply flags.
 
 Files and folders:
 
-- `access_point/` contains the generated access point profile and command plan.
+- `access_point/` contains the older Push Mode / Pi Server Mode access point plan.
+- `wifi_switch/` contains the preferred ESP Server Mode switch plan, where Raspberry Pi joins `NeXa-ESP` and pulls from `http://192.168.4.1/api/state`.
 
 Hotspot setup is manual and safety-gated because turning `wlan0` into an access point may disconnect internet/SSH.
 
@@ -31,5 +32,17 @@ If `wlan0` is the internet route, also add:
 Rollback:
 
 `python3 scripts/network/rollback_nexa_ap.py --apply --i-understand-this-changes-network`
+
+ESP Server Mode switch dry-run:
+
+`python3 scripts/network/connect_to_esp_network.py`
+
+Apply the ESP Wi-Fi switch only when ready:
+
+`python3 scripts/network/connect_to_esp_network.py --apply --i-understand-this-will-disconnect-internet`
+
+Reconnect home Wi-Fi after demo:
+
+`python3 scripts/network/reconnect_home_wifi.py --apply --i-understand-this-changes-network`
 
 Do not put logs, personal Wi-Fi credentials, or secrets in this folder.

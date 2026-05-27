@@ -48,6 +48,28 @@ def parse_arduino_raw_line(line: str) -> dict[str, Any]:
     }
 
 
+def _presence_fields(payload: dict[str, Any], distance_cm: float | None, presence: bool) -> dict[str, Any]:
+    has_distance = "distance_cm" in payload
+    if distance_cm is not None:
+        return {
+            "distance_valid": distance_cm > 0,
+            "presence_detected": distance_cm > 0,
+            "presence_source": "distance",
+        }
+    if has_distance:
+        return {
+            "distance_valid": False,
+            "presence_detected": False,
+            "presence_source": "distance",
+        }
+    has_presence = "presence" in payload
+    return {
+        "distance_valid": False,
+        "presence_detected": bool(presence),
+        "presence_source": "presence_flag" if has_presence else "none",
+    }
+
+
 class HardwareStateStore:
     def __init__(self, stale_after_seconds: float = 5.0):
         self.stale_after_seconds = float(stale_after_seconds)
@@ -75,6 +97,7 @@ class HardwareStateStore:
             "last_arduino_raw": str(payload.get("last_arduino_raw", "") or ""),
             "last_seen_at": now_iso,
         }
+        normalized.update(_presence_fields(payload, normalized["distance_cm"], normalized["presence"]))
         normalized["advice"] = advice_for_air_status(str(normalized["air_status"]), True)
         with self._lock:
             self._state = normalized
@@ -92,6 +115,9 @@ class HardwareStateStore:
             "device": "",
             "presence": False,
             "distance_cm": None,
+            "distance_valid": False,
+            "presence_detected": False,
+            "presence_source": "none",
             "joystick": "UNKNOWN",
             "joystick_x": None,
             "joystick_y": None,

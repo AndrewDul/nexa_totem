@@ -43,6 +43,8 @@ def normalize_int(value: Any) -> int | None:
 
 def normalize_distance(value: Any) -> float | None:
     distance = normalize_float(value)
+    if distance == -1:
+        return -1.0
     if distance is None or distance < 0:
         return None
     return distance
