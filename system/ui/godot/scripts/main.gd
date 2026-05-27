@@ -15,12 +15,25 @@ const CLOCK_REDRAW_INTERVAL := 1.0
 const TRANSITION_SECONDS := 0.14
 const CLOSE_TRANSITION_SECONDS := 0.10
 const CONTROL_CENTER_SAFE_MODE := true
+const TTT_EMPTY := ""
+const TTT_PLAYER_X := "X"
+const TTT_PLAYER_O := "O"
+const TTT_WIN_LINES := [
+	[0, 1, 2],
+	[3, 4, 5],
+	[6, 7, 8],
+	[0, 3, 6],
+	[1, 4, 7],
+	[2, 5, 8],
+	[0, 4, 8],
+	[2, 4, 6]
+]
 const MENU_TILES := [
 	{"icon": "◷", "title": "Time", "subtitle": "Clock"},
 	{"icon": "◌", "title": "Study", "subtitle": "Focus"},
 	{"icon": "!", "title": "Reminders", "subtitle": "Alerts"},
 	{"icon": "□", "title": "Calendar", "subtitle": "Events"},
-	{"icon": "✓", "title": "Tasks", "subtitle": "To-do"},
+	{"icon": "✓", "title": "To Do", "subtitle": "Tasks"},
 	{"icon": "◆", "title": "Games", "subtitle": "Play"},
 	{"icon": "⌁", "title": "Diagnostics", "subtitle": "System"},
 	{"icon": "⚙", "title": "Settings", "subtitle": "Setup"}
@@ -55,7 +68,7 @@ const SETTINGS_TILES := [
 const COLOR_OPTIONS := ["Blue", "Sky Blue", "Cyan", "White", "Warm White", "Yellow", "Orange", "Red", "Pink", "Purple", "Green", "Mint", "Brown", "Gold", "Grey", "Graphite", "Black"]
 const PRESET_OPTIONS := ["NeXa Blue", "Apple Dark", "Warm Desk", "Focus Green", "Night Red", "Soft Pink", "Minimal White"]
 const MODE_OPTIONS := ["Normal", "Quiet", "Focus", "Night", "Away", "Demo", "Maintenance"]
-const QUICK_SHELF_OPTIONS := ["Clock", "Calendar", "Reminders", "Tasks", "Study", "Study Stats", "Games", "Diagnostics", "Network", "Camera", "Air Quality", "Temperature", "Brightness", "Sound", "Quiet Mode", "Remote", "Settings", "LED", "Logs", "Reports", "Exit NeXa"]
+const QUICK_SHELF_OPTIONS := ["Clock", "Calendar", "Reminders", "To Do", "Tasks", "Study", "Study Stats", "Games", "Diagnostics", "Network", "Camera", "Air Quality", "Temperature", "Brightness", "Sound", "Quiet Mode", "Remote", "Settings", "LED", "Logs", "Reports", "Exit NeXa"]
 const STUDY_TILES := [
 	{"title": "Smart Study", "subtitle": "Segments"},
 	{"title": "Flashcards", "subtitle": "Sets"},
@@ -169,6 +182,44 @@ var calendar_poll_accumulator := 0.0
 var calendar_due_modal_open := false
 var calendar_pending_due_event_id := 0
 var calendar_pending_due_occurrence := ""
+var todo_lists_data := {}
+var todo_tasks_data := {}
+var todo_due_data := {}
+var todo_status_text := ""
+var todo_mode := "lists"
+var todo_selected_list_id := 0
+var todo_selected_task_id := 0
+var todo_selected_task := {}
+var todo_scroll_y := 0.0
+var todo_task_scroll_y := 0.0
+var todo_form_title := ""
+var todo_form_notes := ""
+var todo_form_date := ""
+var todo_form_time := ""
+var todo_form_reminder_enabled := false
+var todo_form_repeat_unit := "none"
+var todo_form_repeat_interval := 1
+var todo_list_form_name := ""
+var todo_list_form_emoji := "📥"
+var todo_poll_accumulator := 0.0
+var todo_due_modal_open := false
+var todo_pending_due_task_id := 0
+var games_mode := "library"
+var games_focus_index := 0
+var games_library_scroll_y := 0.0
+var games_help_open := false
+var games_exit_confirm_return := "face_home"
+var tic_tac_toe_mode := "someone"
+var tic_tac_toe_menu_focus_index := 0
+var tic_tac_toe_result_focus_index := 0
+var tic_tac_toe_board: Array = [TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY]
+var tic_tac_toe_current_player := TTT_PLAYER_X
+var tic_tac_toe_selected_cell := 4
+var tic_tac_toe_result := ""
+var tic_tac_toe_game_over := false
+var tic_tac_toe_status_text := "Player X turn"
+var tic_tac_toe_nexa_thinking := false
+var tic_tac_toe_thinking_elapsed := 0.0
 var study_current_page := "home"
 var study_scroll_y := 0.0
 var study_data := {}
@@ -251,9 +302,13 @@ func _process(delta: float) -> void:
 			elif nav.current_screen == "Notification Control Center":
 				control_center_refresh_pending = true
 			_request_redraw()
+	if tic_tac_toe_nexa_thinking:
+		tic_tac_toe_thinking_elapsed += delta
+		if tic_tac_toe_thinking_elapsed >= 0.30:
+			_ttt_finish_nexa_turn()
 	# Redraw is throttled: Face Home and transitions animate at 30 FPS max,
 	# static panels draw only after input/open/tab changes, and Clock ticks once per second.
-	var animated := transition_active or nav.current_screen == "Face Home" or elapsed < nav.status_bubble_until
+	var animated := transition_active or nav.current_screen == "Face Home" or elapsed < nav.status_bubble_until or tic_tac_toe_nexa_thinking
 	var clock_tick := nav.current_screen == "Clock" and clock_redraw_accumulator >= CLOCK_REDRAW_INTERVAL
 	if (animated or redraw_requested) and redraw_accumulator >= REDRAW_INTERVAL:
 		redraw_accumulator = 0.0
@@ -329,6 +384,12 @@ func _gui_input(event: InputEvent) -> void:
 		if slider_drag_active:
 			_update_slider_drag(event.position)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if nav.current_screen != "Games" or event is InputEventKey:
+		return
+	if _handle_games_action_event(event):
+		get_viewport().set_input_as_handled()
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.pressed:
 		return
@@ -349,6 +410,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if _text_input_char_allowed(typed):
 				text_input_value += typed
 		_request_redraw()
+		return
+	if nav.current_screen == "Games" and _handle_games_action_event(event):
 		return
 	if event.keycode == KEY_LEFT and nav.current_screen == "Face Home":
 		_open_menu()
@@ -400,10 +463,12 @@ func _handle_gesture(action: String, position: Vector2) -> void:
 		_go_home()
 	elif nav.current_screen == "Study" and study_current_page == "home" and (action == "swipe_right" or action == "swipe_down"):
 		_go_home()
+	elif nav.current_screen == "Games" and action == "swipe_right":
+		_back_from_game_screen()
 	_request_redraw()
 
 func _handle_tap(position: Vector2) -> void:
-	if (reminders_due_modal_open or calendar_due_modal_open) and _handle_due_notification_modal_tap(position):
+	if (reminders_due_modal_open or calendar_due_modal_open or todo_due_modal_open) and _handle_due_notification_modal_tap(position):
 		return
 	if text_input_open:
 		_handle_text_input_tap(position)
@@ -441,6 +506,12 @@ func _handle_tap(position: Vector2) -> void:
 	if nav.current_screen == "Calendar":
 		_handle_calendar_tap(position)
 		return
+	if nav.current_screen == "To Do":
+		_handle_todo_tap(position)
+		return
+	if nav.current_screen == "Games":
+		_handle_games_tap(position)
+		return
 
 func _handle_menu_tap(position: Vector2) -> void:
 	for index in range(MENU_TILES.size()):
@@ -455,6 +526,10 @@ func _handle_menu_tap(position: Vector2) -> void:
 				_open_reminders()
 			elif tile["title"] == "Calendar":
 				_open_calendar()
+			elif tile["title"] == "To Do":
+				_open_todo()
+			elif tile["title"] == "Games":
+				_open_games()
 			elif tile["title"] == "Diagnostics":
 				_open_diagnostics()
 			elif tile["title"] == "Settings":
@@ -513,7 +588,11 @@ func _handle_notification_tap(position: Vector2) -> bool:
 			_request_redraw()
 			return true
 		if Rect2(260, 354, 120, 34).has_point(position):
-			_dismiss_notification(notification_selected)
+			if str(notification_selected.get("type", "")) == "todo":
+				api.request_post("/api/todo/tasks/mark-done", {"id": int(notification_selected.get("source_id", 0))})
+				_local_remove_notification(str(notification_selected.get("id", "")), true)
+			else:
+				_dismiss_notification(notification_selected)
 			return true
 		if Rect2(416, 354, 120, 34).has_point(position):
 			_open_notification_source(notification_selected)
@@ -590,6 +669,15 @@ func _open_notification_source(notification: Dictionary) -> void:
 		notification_detail_modal_open = false
 		notification_selected = {}
 		_open_calendar()
+		_request_redraw()
+		return
+	if str(notification.get("type", "")) == "todo":
+		todo_selected_list_id = int(notification.get("list_id", 0))
+		todo_selected_task_id = int(notification.get("source_id", 0))
+		notification_detail_modal_open = false
+		notification_selected = {}
+		_open_todo_list(todo_selected_list_id)
+		todo_mode = "task_detail"
 		_request_redraw()
 		return
 
@@ -685,12 +773,18 @@ func _activate_quick_shelf_tile(tile_name: String) -> void:
 	elif tile_name == "Study Stats":
 		quick_shelf_status_text = "Opening Study Stats"
 		_open_study("stats")
+	elif tile_name == "Games":
+		quick_shelf_status_text = "Opening Games"
+		_open_games()
 	elif tile_name == "Reminders":
 		quick_shelf_status_text = "Opening Reminders"
 		_open_reminders()
 	elif tile_name == "Calendar":
 		quick_shelf_status_text = "Opening Calendar"
 		_open_calendar()
+	elif tile_name == "To Do" or tile_name == "Tasks":
+		quick_shelf_status_text = "Opening To Do"
+		_open_todo()
 	elif tile_name == "Quiet Mode":
 		quiet_mode_local = not quiet_mode_local
 		control_center_data["quiet_mode"] = quiet_mode_local
@@ -914,6 +1008,121 @@ func _handle_calendar_form_tap(position: Vector2) -> void:
 	elif Rect2(232, 390, 170, 34).has_point(position):
 		calendar_mode = "details"
 
+func _handle_todo_tap(position: Vector2) -> void:
+	if Rect2(520, 22, 92, 34).has_point(position):
+		_go_home()
+		return
+	if todo_mode == "delete_confirm":
+		if Rect2(78, 354, 210, 42).has_point(position):
+			todo_mode = "task_detail"
+		elif Rect2(352, 354, 210, 42).has_point(position):
+			api.request_post("/api/todo/tasks/delete", {"id": todo_selected_task_id, "confirm_text": "DELETE_TODO_TASK"})
+			todo_mode = "list_detail"
+		_request_redraw()
+		return
+	if todo_mode == "list_form":
+		_handle_todo_list_form_tap(position)
+		return
+	if todo_mode == "task_form":
+		_handle_todo_task_form_tap(position)
+		return
+	if todo_mode == "task_detail":
+		_handle_todo_task_detail_tap(position)
+		return
+	if todo_mode == "lists":
+		if Rect2(412, 26, 92, 30).has_point(position):
+			_todo_open_list_form()
+			return
+		var lists := _todo_lists()
+		for index in range(lists.size()):
+			var rect := _todo_list_card_rect(index)
+			if rect.has_point(position):
+				var item: Dictionary = lists[index] as Dictionary
+				_open_todo_list(int(item.get("id", 0)))
+				return
+		return
+	if todo_mode == "list_detail":
+		if Rect2(30, 70, 74, 30).has_point(position):
+			todo_mode = "lists"
+			api.request_get("/api/todo/lists")
+			_request_redraw()
+			return
+		if Rect2(400, 26, 92, 30).has_point(position):
+			_todo_open_task_form(false)
+			return
+		var active := _todo_active_tasks()
+		for index in range(active.size()):
+			var row := _todo_task_row_rect(index, false)
+			if row.has_point(position):
+				var task: Dictionary = active[index] as Dictionary
+				_todo_select_task(task)
+				todo_mode = "task_detail"
+				return
+		var completed := _todo_completed_tasks()
+		for index in range(completed.size()):
+			var crow := _todo_task_row_rect(index, true)
+			if crow.has_point(position):
+				var ctask: Dictionary = completed[index] as Dictionary
+				_todo_select_task(ctask)
+				todo_mode = "task_detail"
+				return
+
+func _handle_todo_list_form_tap(position: Vector2) -> void:
+	if Rect2(44, 150, 120, 34).has_point(position):
+		_open_text_input("Emoji", todo_list_form_emoji, "todo_list_emoji", {})
+	elif Rect2(178, 150, 418, 34).has_point(position):
+		_open_text_input("List name", todo_list_form_name, "todo_list_name", {})
+	elif Rect2(44, 390, 170, 34).has_point(position):
+		if todo_list_form_name.strip_edges() == "":
+			todo_status_text = "List name is required."
+		else:
+			api.request_post("/api/todo/lists/create", {"name": todo_list_form_name, "emoji": todo_list_form_emoji})
+			todo_mode = "lists"
+	elif Rect2(232, 390, 170, 34).has_point(position):
+		todo_mode = "lists"
+	_request_redraw()
+
+func _handle_todo_task_form_tap(position: Vector2) -> void:
+	if Rect2(44, 118, 552, 32).has_point(position):
+		_open_text_input("Task", todo_form_title, "todo_title", {})
+	elif Rect2(44, 156, 552, 32).has_point(position):
+		_open_text_input("Notes", todo_form_notes, "todo_notes", {})
+	elif Rect2(44, 202, 120, 32).has_point(position):
+		todo_form_reminder_enabled = not todo_form_reminder_enabled
+		_request_redraw()
+	elif Rect2(178, 202, 180, 32).has_point(position):
+		_open_text_input("Date YYYY-MM-DD", todo_form_date, "todo_date", {"keyboard_mode": "datetime"})
+	elif Rect2(374, 202, 120, 32).has_point(position):
+		_open_text_input("Time HH:MM", todo_form_time, "todo_time", {"keyboard_mode": "datetime"})
+	elif Rect2(44, 250, 170, 32).has_point(position):
+		_todo_cycle_repeat()
+	elif Rect2(230, 250, 48, 32).has_point(position):
+		todo_form_repeat_interval = maxi(1, todo_form_repeat_interval - 1)
+		_request_redraw()
+	elif Rect2(288, 250, 48, 32).has_point(position):
+		todo_form_repeat_interval = mini(999, todo_form_repeat_interval + 1)
+		_request_redraw()
+	elif Rect2(44, 390, 170, 34).has_point(position):
+		_todo_save_task_form()
+	elif Rect2(232, 390, 170, 34).has_point(position):
+		todo_mode = "list_detail"
+	_request_redraw()
+
+func _handle_todo_task_detail_tap(position: Vector2) -> void:
+	if Rect2(44, 386, 116, 34).has_point(position):
+		if str(todo_selected_task.get("status", "active")) == "completed":
+			api.request_post("/api/todo/tasks/mark-active", {"id": todo_selected_task_id})
+		else:
+			api.request_post("/api/todo/tasks/mark-done", {"id": todo_selected_task_id})
+		todo_mode = "list_detail"
+	elif Rect2(174, 386, 92, 34).has_point(position):
+		_todo_open_task_form(true)
+	elif Rect2(280, 386, 92, 34).has_point(position):
+		todo_mode = "delete_confirm"
+	elif Rect2(386, 386, 92, 34).has_point(position):
+		todo_mode = "list_detail"
+	_request_redraw()
+
 func _reminders_open_add_form() -> void:
 	var now := Time.get_datetime_dict_from_system()
 	reminders_mode = "add"
@@ -1003,6 +1212,88 @@ func _calendar_snooze_label() -> String:
 
 func _calendar_repeat_label() -> String:
 	return calendar_form_repeat.capitalize()
+
+func _todo_open_list_form() -> void:
+	todo_mode = "list_form"
+	todo_list_form_name = ""
+	todo_list_form_emoji = "📥"
+	_request_redraw()
+
+func _todo_open_task_form(editing: bool) -> void:
+	todo_mode = "task_form"
+	if editing:
+		todo_form_title = str(todo_selected_task.get("title", ""))
+		todo_form_notes = str(todo_selected_task.get("notes", ""))
+		todo_form_date = str(todo_selected_task.get("due_date", ""))
+		todo_form_time = str(todo_selected_task.get("due_time", ""))
+		todo_form_reminder_enabled = bool(todo_selected_task.get("reminder_enabled", false))
+		todo_form_repeat_unit = str(todo_selected_task.get("repeat_unit", "none"))
+		todo_form_repeat_interval = maxi(1, int(todo_selected_task.get("repeat_interval", 1)))
+	else:
+		var now := Time.get_datetime_dict_from_system()
+		todo_selected_task_id = 0
+		todo_selected_task = {}
+		todo_form_title = ""
+		todo_form_notes = ""
+		todo_form_date = "%04d-%02d-%02d" % [now.year, now.month, now.day]
+		todo_form_time = "%02d:%02d" % [now.hour, now.minute]
+		todo_form_reminder_enabled = false
+		todo_form_repeat_unit = "none"
+		todo_form_repeat_interval = 1
+	_request_redraw()
+
+func _todo_cycle_repeat() -> void:
+	var options := ["none", "hours", "days", "weekly", "monthly", "yearly"]
+	var index := options.find(todo_form_repeat_unit)
+	todo_form_repeat_unit = str(options[(index + 1) % options.size()])
+	if todo_form_repeat_unit == "hours" or todo_form_repeat_unit == "days":
+		todo_form_repeat_interval = maxi(1, todo_form_repeat_interval)
+	else:
+		todo_form_repeat_interval = 1
+	_request_redraw()
+
+func _todo_repeat_label() -> String:
+	if todo_form_repeat_unit == "hours":
+		return "Every " + str(todo_form_repeat_interval) + " hours"
+	if todo_form_repeat_unit == "days":
+		return "Every " + str(todo_form_repeat_interval) + " days"
+	if todo_form_repeat_unit == "weekly":
+		return "Weekly"
+	if todo_form_repeat_unit == "monthly":
+		return "Monthly"
+	if todo_form_repeat_unit == "yearly":
+		return "Yearly"
+	return "None"
+
+func _todo_save_task_form() -> void:
+	if todo_form_title.strip_edges() == "":
+		todo_status_text = "Task title is required."
+		return
+	if todo_form_reminder_enabled and (not _reminders_date_valid(todo_form_date) or not _reminders_time_valid(todo_form_time)):
+		todo_status_text = "Use YYYY-MM-DD and HH:MM."
+		return
+	var payload := {
+		"list_id": todo_selected_list_id,
+		"title": todo_form_title,
+		"notes": todo_form_notes,
+		"due_date": todo_form_date,
+		"due_time": todo_form_time,
+		"reminder_enabled": todo_form_reminder_enabled,
+		"repeat_unit": todo_form_repeat_unit,
+		"repeat_interval": todo_form_repeat_interval,
+		"status": str(todo_selected_task.get("status", "active"))
+	}
+	if todo_selected_task_id > 0:
+		payload["id"] = todo_selected_task_id
+		api.request_post("/api/todo/tasks/update", payload)
+	else:
+		api.request_post("/api/todo/tasks/create", payload)
+	todo_mode = "list_detail"
+
+func _todo_select_task(task: Dictionary) -> void:
+	todo_selected_task = task
+	todo_selected_task_id = int(task.get("id", 0))
+	_request_redraw()
 
 func _reminders_open_edit_form() -> void:
 	reminders_mode = "edit"
@@ -1577,7 +1868,7 @@ func _close_text_input() -> void:
 
 func _text_input_keys() -> String:
 	if text_input_keyboard_mode == "datetime":
-		if text_input_target == "reminder_time" or text_input_target == "calendar_time":
+		if text_input_target == "reminder_time" or text_input_target == "calendar_time" or text_input_target == "todo_time":
 			return "0123456789:"
 		return "0123456789-"
 	if text_input_keyboard_mode == "number":
@@ -1684,6 +1975,18 @@ func _commit_text_input() -> void:
 		calendar_form_date = value
 	elif target == "calendar_time":
 		calendar_form_time = value
+	elif target == "todo_list_name":
+		todo_list_form_name = value
+	elif target == "todo_list_emoji":
+		todo_list_form_emoji = value
+	elif target == "todo_title":
+		todo_form_title = value
+	elif target == "todo_notes":
+		todo_form_notes = value
+	elif target == "todo_date":
+		todo_form_date = value
+	elif target == "todo_time":
+		todo_form_time = value
 	_request_redraw()
 
 func _settings_update(section: String, key: String, value) -> void:
@@ -2054,6 +2357,16 @@ func _begin_scroll_drag(position: Vector2) -> bool:
 		scroll_drag_area = "reminders_past"
 		scroll_drag_last_y = position.y
 		return true
+	if nav.current_screen == "To Do" and todo_mode == "lists" and _todo_lists_scrollbar_hit_rect().has_point(position) and _todo_lists_max_scroll() > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "todo_lists"
+		scroll_drag_last_y = position.y
+		return true
+	if nav.current_screen == "To Do" and todo_mode == "list_detail" and _todo_tasks_scrollbar_hit_rect().has_point(position) and _todo_tasks_max_scroll() > 0.0:
+		scroll_drag_active = true
+		scroll_drag_area = "todo_tasks"
+		scroll_drag_last_y = position.y
+		return true
 	return false
 
 func _update_scroll_drag(position: Vector2) -> void:
@@ -2078,6 +2391,10 @@ func _handle_scroll_wheel(position: Vector2, amount: float) -> void:
 		_apply_scroll("reminders_upcoming", amount)
 	elif nav.current_screen == "Reminders" and _reminders_past_scroll_rect().has_point(position):
 		_apply_scroll("reminders_past", amount)
+	elif nav.current_screen == "To Do" and todo_mode == "lists" and _todo_lists_scroll_rect().has_point(position):
+		_apply_scroll("todo_lists", amount)
+	elif nav.current_screen == "To Do" and todo_mode == "list_detail" and _todo_tasks_scroll_rect().has_point(position):
+		_apply_scroll("todo_tasks", amount)
 
 func _apply_scroll(area: String, amount: float) -> void:
 	if area == "diagnostics":
@@ -2103,6 +2420,12 @@ func _apply_scroll(area: String, amount: float) -> void:
 		_request_redraw()
 	elif area == "reminders_past":
 		reminders_past_scroll_y = clampf(reminders_past_scroll_y + amount, 0.0, _reminders_max_scroll("past"))
+		_request_redraw()
+	elif area == "todo_lists":
+		todo_scroll_y = clampf(todo_scroll_y + amount, 0.0, _todo_lists_max_scroll())
+		_request_redraw()
+	elif area == "todo_tasks":
+		todo_task_scroll_y = clampf(todo_task_scroll_y + amount, 0.0, _todo_tasks_max_scroll())
 		_request_redraw()
 
 func _diagnostics_scroll_rect() -> Rect2:
@@ -2229,6 +2552,426 @@ func _reminder_row_rect(kind: String, index: int) -> Rect2:
 	var scroll := reminders_upcoming_scroll_y if kind == "upcoming" else reminders_past_scroll_y
 	return Rect2(x, 230.0 + float(index) * 42.0 - scroll, 242.0, 34.0)
 
+func _todo_lists_scroll_rect() -> Rect2:
+	return Rect2(24, 82, 592, 370)
+
+func _todo_lists_scrollbar_hit_rect() -> Rect2:
+	return Rect2(596, 82, 20, 370)
+
+func _todo_tasks_scroll_rect() -> Rect2:
+	return Rect2(24, 108, 592, 344)
+
+func _todo_tasks_scrollbar_hit_rect() -> Rect2:
+	return Rect2(596, 108, 20, 344)
+
+func _todo_lists_content_height() -> float:
+	return maxf(_todo_lists_scroll_rect().size.y, float(_todo_lists().size()) * 78.0 + 12.0)
+
+func _todo_lists_max_scroll() -> float:
+	return maxf(0.0, _todo_lists_content_height() - _todo_lists_scroll_rect().size.y)
+
+func _todo_tasks_content_height() -> float:
+	return maxf(_todo_tasks_scroll_rect().size.y, 36.0 + float(_todo_active_tasks().size()) * 48.0 + 42.0 + float(_todo_completed_tasks().size()) * 48.0 + 20.0)
+
+func _todo_tasks_max_scroll() -> float:
+	return maxf(0.0, _todo_tasks_content_height() - _todo_tasks_scroll_rect().size.y)
+
+func _todo_list_card_rect(index: int) -> Rect2:
+	return Rect2(44, 96.0 + float(index) * 78.0 - todo_scroll_y, 552, 64)
+
+func _todo_task_row_rect(index: int, completed: bool) -> Rect2:
+	var y := 146.0 + float(index) * 48.0
+	if completed:
+		y = 186.0 + float(_todo_active_tasks().size()) * 48.0 + float(index) * 48.0
+	return Rect2(44, y - todo_task_scroll_y, 552, 40)
+
+func _todo_lists() -> Array:
+	var raw = todo_lists_data.get("lists", [])
+	return raw if raw is Array else []
+
+func _todo_active_tasks() -> Array:
+	var raw = todo_tasks_data.get("active", [])
+	return raw if raw is Array else []
+
+func _todo_completed_tasks() -> Array:
+	var raw = todo_tasks_data.get("completed", [])
+	return raw if raw is Array else []
+
+func _games_card_rect(index: int) -> Rect2:
+	return Rect2(44.0 + float(index % 2) * 278.0, 126.0 + float(int(index / 2)) * 112.0 - games_library_scroll_y, 252.0, 88.0)
+
+func _games_exit_rect() -> Rect2:
+	return Rect2(520, 22, 92, 34)
+
+func _ttt_back_rect() -> Rect2:
+	return Rect2(28, 24, 84, 32)
+
+func _ttt_exit_rect() -> Rect2:
+	return Rect2(528, 24, 84, 32)
+
+func _ttt_menu_button_rect(index: int) -> Rect2:
+	return Rect2(160, 238.0 + float(index) * 52.0, 320, 38)
+
+func _ttt_board_rect() -> Rect2:
+	return Rect2(185, 112, 270, 270)
+
+func _ttt_cell_rect(index: int) -> Rect2:
+	var board := _ttt_board_rect()
+	var size := board.size.x / 3.0
+	return Rect2(board.position.x + float(index % 3) * size + 4.0, board.position.y + float(int(index / 3)) * size + 4.0, size - 8.0, size - 8.0)
+
+func _ttt_new_game_rect() -> Rect2:
+	return Rect2(244, 408, 152, 34)
+
+func _ttt_result_button_rect(index: int) -> Rect2:
+	return Rect2(116.0 + float(index) * 140.0, 338, 128, 36)
+
+func _ttt_exit_confirm_button_rect(index: int) -> Rect2:
+	return Rect2(150.0 + float(index) * 180.0, 330, 150, 38)
+
+func _open_games() -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "Games"
+	transition_active = false
+	games_mode = "library"
+	games_focus_index = 0
+	games_help_open = false
+	games_library_scroll_y = 0.0
+	_request_redraw()
+
+func _open_tic_tac_toe_menu() -> void:
+	games_mode = "tic_tac_toe_menu"
+	tic_tac_toe_menu_focus_index = 0
+	games_help_open = false
+	_request_redraw()
+
+func _start_tic_tac_toe(mode: String) -> void:
+	tic_tac_toe_mode = mode
+	games_mode = "tic_tac_toe_game"
+	_reset_tic_tac_toe()
+
+func _reset_tic_tac_toe() -> void:
+	_ttt_reset()
+	tic_tac_toe_result_focus_index = 0
+	_request_redraw()
+
+func _exit_games_to_face_home() -> void:
+	games_help_open = false
+	games_mode = "library"
+	tic_tac_toe_nexa_thinking = false
+	_go_home()
+
+func _back_from_game_screen() -> void:
+	if games_help_open:
+		games_help_open = false
+	elif games_mode == "library":
+		_go_home()
+	elif games_mode == "tic_tac_toe_menu":
+		games_mode = "library"
+		games_focus_index = 0
+	elif games_mode == "tic_tac_toe_game":
+		games_mode = "tic_tac_toe_menu"
+		tic_tac_toe_nexa_thinking = false
+	elif games_mode == "tic_tac_toe_result":
+		games_mode = "tic_tac_toe_menu"
+	elif games_mode == "exit_confirm":
+		games_mode = games_exit_confirm_return
+	else:
+		games_mode = "library"
+	_request_redraw()
+
+func _games_exit_pressed() -> void:
+	if games_mode == "tic_tac_toe_game" and _ttt_has_moves() and not tic_tac_toe_game_over:
+		games_exit_confirm_return = "tic_tac_toe_game"
+		games_mode = "exit_confirm"
+	else:
+		_exit_games_to_face_home()
+	_request_redraw()
+
+func _handle_games_action_event(event: InputEvent) -> bool:
+	if event.is_action_pressed("nexa_exit"):
+		_games_exit_pressed()
+		return true
+	if event.is_action_pressed("nexa_back"):
+		_back_from_game_screen()
+		return true
+	if event.is_action_pressed("nexa_accept"):
+		_games_accept_focused()
+		return true
+	if event.is_action_pressed("nexa_left"):
+		_games_move_focus("left")
+		return true
+	if event.is_action_pressed("nexa_right"):
+		_games_move_focus("right")
+		return true
+	if event.is_action_pressed("nexa_up"):
+		_games_move_focus("up")
+		return true
+	if event.is_action_pressed("nexa_down"):
+		_games_move_focus("down")
+		return true
+	return false
+
+func _games_move_focus(direction: String) -> void:
+	if games_mode == "library":
+		if direction == "left" and games_focus_index > 0:
+			games_focus_index -= 1
+		elif direction == "right" and games_focus_index < 4:
+			games_focus_index += 1
+		elif direction == "up":
+			games_focus_index = max(0, games_focus_index - 2)
+		elif direction == "down":
+			games_focus_index = min(4, games_focus_index + 2)
+	elif games_mode == "tic_tac_toe_menu":
+		if direction == "up":
+			tic_tac_toe_menu_focus_index = max(0, tic_tac_toe_menu_focus_index - 1)
+		elif direction == "down":
+			tic_tac_toe_menu_focus_index = min(2, tic_tac_toe_menu_focus_index + 1)
+	elif games_mode == "tic_tac_toe_game":
+		if tic_tac_toe_nexa_thinking:
+			return
+		if direction == "left" and tic_tac_toe_selected_cell not in [0, 3, 6]:
+			tic_tac_toe_selected_cell -= 1
+		elif direction == "right" and tic_tac_toe_selected_cell not in [2, 5, 8]:
+			tic_tac_toe_selected_cell += 1
+		elif direction == "up" and tic_tac_toe_selected_cell not in [0, 1, 2]:
+			tic_tac_toe_selected_cell -= 3
+		elif direction == "down" and tic_tac_toe_selected_cell not in [6, 7, 8]:
+			tic_tac_toe_selected_cell += 3
+	elif games_mode == "tic_tac_toe_result":
+		if direction == "left" or direction == "up":
+			tic_tac_toe_result_focus_index = max(0, tic_tac_toe_result_focus_index - 1)
+		elif direction == "right" or direction == "down":
+			tic_tac_toe_result_focus_index = min(2, tic_tac_toe_result_focus_index + 1)
+	_request_redraw()
+
+func _games_accept_focused() -> void:
+	if games_help_open:
+		games_help_open = false
+	elif games_mode == "library":
+		if games_focus_index == 0:
+			_open_tic_tac_toe_menu()
+		elif games_focus_index == 4:
+			_exit_games_to_face_home()
+	elif games_mode == "tic_tac_toe_menu":
+		if tic_tac_toe_menu_focus_index == 0:
+			_start_tic_tac_toe("someone")
+		elif tic_tac_toe_menu_focus_index == 1:
+			_start_tic_tac_toe("nexa")
+		else:
+			games_help_open = true
+	elif games_mode == "tic_tac_toe_game":
+		_ttt_play_selected_cell()
+	elif games_mode == "tic_tac_toe_result":
+		_ttt_activate_result_button(tic_tac_toe_result_focus_index)
+	elif games_mode == "exit_confirm":
+		games_mode = games_exit_confirm_return
+	_request_redraw()
+
+func _handle_games_tap(position: Vector2) -> void:
+	if games_mode == "exit_confirm":
+		for index in range(2):
+			if _ttt_exit_confirm_button_rect(index).has_point(position):
+				if index == 0:
+					games_mode = games_exit_confirm_return
+				else:
+					_exit_games_to_face_home()
+				_request_redraw()
+				return
+	if games_help_open:
+		if Rect2(190, 338, 260, 38).has_point(position) or _ttt_back_rect().has_point(position):
+			games_help_open = false
+			_request_redraw()
+		return
+	if games_mode == "library":
+		if _games_exit_rect().has_point(position):
+			_exit_games_to_face_home()
+			return
+		for index in range(4):
+			if _games_card_rect(index).has_point(position):
+				games_focus_index = index
+				if index == 0:
+					_open_tic_tac_toe_menu()
+				_request_redraw()
+				return
+	elif games_mode == "tic_tac_toe_menu":
+		if _ttt_back_rect().has_point(position):
+			_back_from_game_screen()
+			return
+		if _ttt_exit_rect().has_point(position):
+			_exit_games_to_face_home()
+			return
+		for index in range(3):
+			if _ttt_menu_button_rect(index).has_point(position):
+				tic_tac_toe_menu_focus_index = index
+				_games_accept_focused()
+				return
+	elif games_mode == "tic_tac_toe_game":
+		if _ttt_back_rect().has_point(position):
+			_back_from_game_screen()
+			return
+		if _ttt_exit_rect().has_point(position):
+			_games_exit_pressed()
+			return
+		if _ttt_new_game_rect().has_point(position):
+			_reset_tic_tac_toe()
+			return
+		for index in range(9):
+			if _ttt_cell_rect(index).has_point(position):
+				tic_tac_toe_selected_cell = index
+				_ttt_play_selected_cell()
+				return
+	elif games_mode == "tic_tac_toe_result":
+		for index in range(3):
+			if _ttt_result_button_rect(index).has_point(position):
+				tic_tac_toe_result_focus_index = index
+				_ttt_activate_result_button(index)
+				return
+
+func _ttt_reset() -> void:
+	tic_tac_toe_board = [TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY, TTT_EMPTY]
+	tic_tac_toe_current_player = TTT_PLAYER_X
+	tic_tac_toe_selected_cell = 4
+	tic_tac_toe_result = ""
+	tic_tac_toe_game_over = false
+	tic_tac_toe_nexa_thinking = false
+	tic_tac_toe_thinking_elapsed = 0.0
+	tic_tac_toe_status_text = "Your turn" if tic_tac_toe_mode == "nexa" else "Player X turn"
+
+func _ttt_can_play(index: int) -> bool:
+	return index >= 0 and index < 9 and not tic_tac_toe_game_over and not tic_tac_toe_nexa_thinking and str(tic_tac_toe_board[index]) == TTT_EMPTY
+
+func _ttt_play(index: int) -> bool:
+	if not _ttt_can_play(index):
+		tic_tac_toe_status_text = "Choose an empty cell."
+		return false
+	tic_tac_toe_board[index] = tic_tac_toe_current_player
+	_ttt_after_move()
+	return true
+
+func _ttt_get_winner() -> String:
+	return _ttt_winner_for_board(tic_tac_toe_board)
+
+func _ttt_is_draw() -> bool:
+	return _ttt_get_winner() == "" and _ttt_available_moves().is_empty()
+
+func _ttt_available_moves() -> Array:
+	var moves: Array = []
+	for index in range(9):
+		if str(tic_tac_toe_board[index]) == TTT_EMPTY:
+			moves.append(index)
+	return moves
+
+func _ttt_switch_turn() -> void:
+	tic_tac_toe_current_player = TTT_PLAYER_O if tic_tac_toe_current_player == TTT_PLAYER_X else TTT_PLAYER_X
+
+func _ttt_choose_nexa_move() -> int:
+	var winning_move := _ttt_find_winning_move(TTT_PLAYER_O)
+	if winning_move != -1:
+		return winning_move
+	var blocking_move := _ttt_find_winning_move(TTT_PLAYER_X)
+	if blocking_move != -1:
+		return blocking_move
+	if str(tic_tac_toe_board[4]) == TTT_EMPTY:
+		return 4
+	for corner in [0, 2, 6, 8]:
+		if str(tic_tac_toe_board[corner]) == TTT_EMPTY:
+			return corner
+	var moves := _ttt_available_moves()
+	if moves.is_empty():
+		return -1
+	return int(moves[0])
+
+func _ttt_find_winning_move(player: String) -> int:
+	for move in _ttt_available_moves():
+		var test_board := tic_tac_toe_board.duplicate()
+		test_board[int(move)] = player
+		if _ttt_winner_for_board(test_board) == player:
+			return int(move)
+	return -1
+
+func _ttt_winner_for_board(test_board: Array) -> String:
+	for raw_line in TTT_WIN_LINES:
+		var line: Array = raw_line as Array
+		var a := int(line[0])
+		var b := int(line[1])
+		var c := int(line[2])
+		var value := str(test_board[a])
+		if value != TTT_EMPTY and value == str(test_board[b]) and value == str(test_board[c]):
+			return value
+	return ""
+
+func _ttt_play_selected_cell() -> void:
+	_ttt_play(tic_tac_toe_selected_cell)
+	_request_redraw()
+
+func _ttt_after_move() -> void:
+	var winner := _ttt_get_winner()
+	if winner != "":
+		tic_tac_toe_result = winner
+		tic_tac_toe_game_over = true
+		games_mode = "tic_tac_toe_result"
+		tic_tac_toe_result_focus_index = 0
+		tic_tac_toe_status_text = _ttt_result_title()
+		return
+	if _ttt_is_draw():
+		tic_tac_toe_result = "draw"
+		tic_tac_toe_game_over = true
+		games_mode = "tic_tac_toe_result"
+		tic_tac_toe_result_focus_index = 0
+		tic_tac_toe_status_text = "Draw"
+		return
+	if tic_tac_toe_mode == "nexa" and tic_tac_toe_current_player == TTT_PLAYER_X:
+		tic_tac_toe_current_player = TTT_PLAYER_O
+		tic_tac_toe_nexa_thinking = true
+		tic_tac_toe_thinking_elapsed = 0.0
+		tic_tac_toe_status_text = "NeXa is thinking..."
+	else:
+		_ttt_switch_turn()
+		tic_tac_toe_status_text = "Player " + tic_tac_toe_current_player + " turn"
+
+func _ttt_finish_nexa_turn() -> void:
+	tic_tac_toe_nexa_thinking = false
+	tic_tac_toe_thinking_elapsed = 0.0
+	var move := _ttt_choose_nexa_move()
+	if move >= 0:
+		tic_tac_toe_board[move] = TTT_PLAYER_O
+	var winner := _ttt_get_winner()
+	if winner != "":
+		tic_tac_toe_result = winner
+		tic_tac_toe_game_over = true
+		games_mode = "tic_tac_toe_result"
+		tic_tac_toe_status_text = _ttt_result_title()
+	elif _ttt_is_draw():
+		tic_tac_toe_result = "draw"
+		tic_tac_toe_game_over = true
+		games_mode = "tic_tac_toe_result"
+		tic_tac_toe_status_text = "Draw"
+	else:
+		tic_tac_toe_current_player = TTT_PLAYER_X
+		tic_tac_toe_status_text = "Your turn"
+	_request_redraw()
+
+func _ttt_activate_result_button(index: int) -> void:
+	if index == 0:
+		games_mode = "tic_tac_toe_game"
+		_reset_tic_tac_toe()
+	elif index == 1:
+		games_mode = "tic_tac_toe_menu"
+	else:
+		_exit_games_to_face_home()
+	_request_redraw()
+
+func _ttt_has_moves() -> bool:
+	return _ttt_available_moves().size() < 9
+
+func _ttt_result_title() -> String:
+	if tic_tac_toe_result == "draw":
+		return "Draw"
+	if tic_tac_toe_mode == "nexa":
+		return "You win" if tic_tac_toe_result == TTT_PLAYER_X else "NeXa wins"
+	return "Player " + tic_tac_toe_result + " wins"
+
 func _open_menu() -> void:
 	_navigate_to("Menu", "menu_open")
 
@@ -2277,6 +3020,27 @@ func _open_calendar() -> void:
 	_request_calendar_month()
 	_request_calendar_day()
 	api.request_get("/api/calendar/due")
+	_request_redraw()
+
+func _open_todo() -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "To Do"
+	transition_active = false
+	todo_mode = "lists"
+	todo_scroll_y = 0.0
+	api.request_get("/api/todo/lists")
+	api.request_get("/api/todo/due")
+	_request_redraw()
+
+func _open_todo_list(list_id: int) -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "To Do"
+	transition_active = false
+	todo_mode = "list_detail"
+	todo_selected_list_id = int(list_id)
+	todo_task_scroll_y = 0.0
+	api.request_get("/api/todo/tasks?list_id=" + str(todo_selected_list_id))
+	api.request_get("/api/todo/due")
 	_request_redraw()
 
 func _request_calendar_month() -> void:
@@ -2345,6 +3109,12 @@ func _go_home() -> void:
 		reminders_mode = "list"
 	elif nav.current_screen == "Calendar":
 		calendar_mode = "details"
+	elif nav.current_screen == "To Do":
+		todo_mode = "lists"
+	elif nav.current_screen == "Games":
+		games_mode = "library"
+		games_help_open = false
+		tic_tac_toe_nexa_thinking = false
 	if direction == "diagnostics":
 		nav.previous_screen = nav.current_screen
 		nav.current_screen = "Face Home"
@@ -2377,6 +3147,7 @@ func _update_api_polling(delta: float) -> void:
 	study_timer_poll_accumulator += delta
 	reminders_poll_accumulator += delta
 	calendar_poll_accumulator += delta
+	todo_poll_accumulator += delta
 	if transition_active:
 		return
 	var reminders_interval := 1.0 if reminders_due_modal_open else 5.0
@@ -2388,6 +3159,11 @@ func _update_api_polling(delta: float) -> void:
 	if calendar_poll_accumulator >= calendar_interval:
 		calendar_poll_accumulator = 0.0
 		api.request_get("/api/calendar/due")
+		return
+	var todo_interval := 5.0 if todo_due_modal_open else 30.0
+	if todo_poll_accumulator >= todo_interval:
+		todo_poll_accumulator = 0.0
+		api.request_get("/api/todo/due")
 		return
 	if (nav.current_screen == "Face Home" or nav.current_screen == "Study") and study_timer_poll_accumulator >= 1.0:
 		study_timer_poll_accumulator = 0.0
@@ -2478,6 +3254,8 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 		remote_network_local = str(payload.get("remote_network_state", remote_network_local))
 	elif endpoint.begins_with("/api/calendar/"):
 		_handle_calendar_api(endpoint, payload)
+	elif endpoint.begins_with("/api/todo/"):
+		_handle_todo_api(endpoint, payload)
 	elif endpoint.begins_with("/api/reminders/"):
 		_handle_reminders_api(endpoint, payload)
 	elif endpoint == "/api/overview":
@@ -2691,6 +3469,54 @@ func _handle_calendar_api(endpoint: String, payload: Dictionary) -> void:
 		api.request_get("/api/calendar/due")
 	_request_redraw()
 
+func _handle_todo_api(endpoint: String, payload: Dictionary) -> void:
+	todo_status_text = str(payload.get("message", payload.get("status", "ok")))
+	if endpoint == "/api/todo/lists" or endpoint == "/api/todo/overview":
+		todo_lists_data = payload
+		if todo_selected_list_id <= 0 and not _todo_lists().is_empty():
+			var first: Dictionary = _todo_lists()[0] as Dictionary
+			todo_selected_list_id = int(first.get("id", 0))
+	elif endpoint.begins_with("/api/todo/tasks?"):
+		todo_tasks_data = payload
+		_todo_restore_selected_from_tasks()
+	elif endpoint == "/api/todo/due":
+		todo_due_data = payload
+		var due_raw = payload.get("due", [])
+		todo_due_modal_open = due_raw is Array and not due_raw.is_empty()
+		_rebuild_notifications_from_reminders()
+		if todo_due_modal_open:
+			var first := _first_todo_due_item()
+			todo_pending_due_task_id = int(first.get("task_id", first.get("id", 0)))
+	elif endpoint in ["/api/todo/lists/create", "/api/todo/lists/update", "/api/todo/lists/delete"]:
+		var list_raw = payload.get("list", {})
+		if list_raw is Dictionary:
+			todo_selected_list_id = int(list_raw.get("id", todo_selected_list_id))
+		api.request_get("/api/todo/lists")
+	elif endpoint in ["/api/todo/tasks/create", "/api/todo/tasks/update", "/api/todo/tasks/delete", "/api/todo/tasks/mark-done", "/api/todo/tasks/mark-active", "/api/todo/dismiss", "/api/todo/snooze"]:
+		if endpoint == "/api/todo/dismiss" or endpoint == "/api/todo/snooze" or endpoint == "/api/todo/tasks/mark-done":
+			todo_due_modal_open = false
+			_rebuild_notifications_from_reminders()
+		api.request_get("/api/todo/tasks?list_id=" + str(todo_selected_list_id))
+		api.request_get("/api/todo/due")
+	_request_redraw()
+
+func _first_todo_due_item() -> Dictionary:
+	var due_raw = todo_due_data.get("due", [])
+	if due_raw is Array and not due_raw.is_empty():
+		return due_raw[0] as Dictionary
+	return {}
+
+func _todo_restore_selected_from_tasks() -> void:
+	if todo_selected_task_id <= 0:
+		return
+	for raw_task in _todo_active_tasks() + _todo_completed_tasks():
+		var task: Dictionary = raw_task as Dictionary
+		if int(task.get("id", 0)) == todo_selected_task_id:
+			todo_selected_task = task
+			return
+	todo_selected_task_id = 0
+	todo_selected_task = {}
+
 func _first_calendar_due_item() -> Dictionary:
 	var due_raw = calendar_due_data.get("due", [])
 	if due_raw is Array and not due_raw.is_empty():
@@ -2775,6 +3601,30 @@ func _rebuild_notifications_from_reminders() -> void:
 				"created_at": occurrence,
 				"dismissed_local": false
 			})
+	var todo_due_raw = todo_due_data.get("due", [])
+	if todo_due_raw is Array:
+		for raw_todo_item in todo_due_raw:
+			var todo_item: Dictionary = raw_todo_item as Dictionary
+			var task_id := int(todo_item.get("task_id", todo_item.get("id", 0)))
+			if task_id <= 0:
+				continue
+			var due_at := str(todo_item.get("due_at", ""))
+			var todo_notification_id := "todo:" + str(task_id) + ":" + due_at
+			if bool(notification_dismissed_ids.get(todo_notification_id, false)):
+				continue
+			next_notifications.append({
+				"id": todo_notification_id,
+				"type": "todo",
+				"title": "To Do",
+				"body": str(todo_item.get("title", "Task")),
+				"subtitle": str(todo_item.get("list_emoji", "📥")) + " " + str(todo_item.get("list_name", "List")) + " • " + _format_due_label(due_at),
+				"requires_pin": false,
+				"source_id": task_id,
+				"list_id": int(todo_item.get("list_id", 0)),
+				"source_item": todo_item,
+				"created_at": due_at,
+				"dismissed_local": false
+			})
 	notifications_data = next_notifications
 	notification_scroll_y = clampf(notification_scroll_y, 0.0, _notification_max_scroll())
 	if notification_detail_modal_open and not notification_selected.is_empty():
@@ -2814,6 +3664,9 @@ func _local_remove_notification(notification_id: String, remember_dismissed: boo
 		calendar_due_modal_open = false
 		calendar_pending_due_event_id = 0
 		calendar_pending_due_occurrence = ""
+	if notification_id.begins_with("todo:" + str(todo_pending_due_task_id) + ":"):
+		todo_due_modal_open = false
+		todo_pending_due_task_id = 0
 	_request_redraw()
 
 func _dismiss_notification(notification: Dictionary) -> void:
@@ -2825,6 +3678,8 @@ func _dismiss_notification(notification: Dictionary) -> void:
 		api.request_post("/api/reminders/dismiss", {"id": int(notification.get("source_id", 0))})
 	elif str(notification.get("type", "")) == "calendar":
 		api.request_post("/api/calendar/dismiss", {"event_id": int(notification.get("source_id", 0)), "occurrence_start": str(notification.get("occurrence_start", ""))})
+	elif str(notification.get("type", "")) == "todo":
+		api.request_post("/api/todo/dismiss", {"task_id": int(notification.get("source_id", 0))})
 
 func _dismiss_pending_due_notification() -> void:
 	var notification_id := "reminder:" + str(reminders_pending_due_id)
@@ -2844,7 +3699,43 @@ func _dismiss_pending_calendar_notification() -> void:
 	else:
 		_dismiss_notification(notification)
 
+func _dismiss_pending_todo_notification() -> void:
+	var notification := _todo_pending_notification()
+	if notification.is_empty():
+		api.request_post("/api/todo/tasks/mark-done", {"id": todo_pending_due_task_id})
+	else:
+		_local_remove_notification(str(notification.get("id", "")), true)
+		api.request_post("/api/todo/tasks/mark-done", {"id": todo_pending_due_task_id})
+	todo_due_modal_open = false
+
+func _todo_pending_notification() -> Dictionary:
+	for raw_notification in notifications_data:
+		var notification: Dictionary = raw_notification as Dictionary
+		if str(notification.get("type", "")) == "todo" and int(notification.get("source_id", 0)) == todo_pending_due_task_id:
+			return notification
+	return {}
+
 func _handle_due_notification_modal_tap(position: Vector2) -> bool:
+	if todo_due_modal_open and not _first_todo_due_item().is_empty():
+		if Rect2(164, 324, 96, 34).has_point(position):
+			_dismiss_pending_todo_notification()
+			return true
+		if Rect2(272, 324, 112, 34).has_point(position):
+			var notification := _todo_pending_notification()
+			if not notification.is_empty():
+				_local_remove_notification(str(notification.get("id", "")), false)
+			api.request_post("/api/todo/snooze", {"task_id": todo_pending_due_task_id, "minutes": 10})
+			todo_due_modal_open = false
+			return true
+		if Rect2(396, 324, 96, 34).has_point(position):
+			var first := _first_todo_due_item()
+			todo_due_modal_open = false
+			todo_selected_list_id = int(first.get("list_id", 0))
+			todo_selected_task_id = todo_pending_due_task_id
+			_open_todo_list(todo_selected_list_id)
+			todo_mode = "task_detail"
+			return true
+		return false
 	if calendar_due_modal_open and not _first_calendar_due_item().is_empty():
 		if Rect2(164, 324, 96, 34).has_point(position):
 			_dismiss_pending_calendar_notification()
@@ -2924,7 +3815,7 @@ func _draw() -> void:
 	_draw_global_overlays()
 
 func _draw_global_overlays() -> void:
-	if reminders_due_modal_open or calendar_due_modal_open:
+	if reminders_due_modal_open or calendar_due_modal_open or todo_due_modal_open:
 		_draw_due_reminder_modal()
 
 func _draw_transition() -> void:
@@ -2986,6 +3877,10 @@ func _draw_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_reminders()
 		"Calendar":
 			_draw_calendar()
+		"To Do":
+			_draw_todo()
+		"Games":
+			_draw_games()
 		_:
 			_draw_placeholder(nav.placeholder_title if nav.placeholder_title != "" else screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -3005,6 +3900,10 @@ func _draw_overlay_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_reminders()
 		"Calendar":
 			_draw_calendar()
+		"To Do":
+			_draw_todo()
+		"Games":
+			_draw_games()
 		_:
 			_draw_placeholder(screen_name)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -3123,13 +4022,13 @@ func _draw_due_reminder_modal() -> void:
 	var rect := Rect2(128, 188, 384, 190)
 	_draw_rounded_rect(rect, Color(0.045, 0.052, 0.064, 0.98), 22.0)
 	_draw_rounded_outline(rect, Color(1.0, 1.0, 1.0, 0.10), 22.0)
-	var modal_title := "Calendar" if str(notification.get("type", "")) == "calendar" else "Reminder"
+	var modal_title := "Calendar" if str(notification.get("type", "")) == "calendar" else ("To Do Reminder" if str(notification.get("type", "")) == "todo" else "Reminder")
 	_draw_centered_text(modal_title, 320.0, 224.0, 18, ThemeScript.TEXT)
 	var title := str(notification.get("body", "Reminder"))
 	_draw_centered_text(_short_text(title, 38), 320.0, 258.0, 15, ThemeScript.TEXT)
 	_draw_centered_text(_short_text(str(notification.get("subtitle", "")), 38), 320.0, 282.0, 11, ThemeScript.TEXT_MUTED)
-	_draw_button(Rect2(164, 324, 96, 34), "Done" if modal_title == "Calendar" else "Dismiss", false)
-	_draw_button(Rect2(272, 324, 112, 34), "Snooze 10m" if modal_title == "Calendar" else "Snooze +5m", false)
+	_draw_button(Rect2(164, 324, 96, 34), "Done" if modal_title == "Calendar" or modal_title == "To Do Reminder" else "Dismiss", false)
+	_draw_button(Rect2(272, 324, 112, 34), "Snooze 10m" if modal_title == "Calendar" or modal_title == "To Do Reminder" else "Snooze +5m", false)
 	_draw_button(Rect2(396, 324, 96, 34), "Open", false)
 
 func _draw_study_timer_overlay() -> void:
@@ -3424,7 +4323,7 @@ func _draw_notification_detail_modal() -> void:
 	_draw_centered_text(_short_text(body, 54), 320.0, 232.0, 15, ThemeScript.TEXT)
 	_draw_centered_text(_short_text(subtitle, 54), 320.0, 260.0, 11, ThemeScript.TEXT_MUTED)
 	_draw_button(Rect2(104, 354, 120, 34), "Close", false)
-	_draw_button(Rect2(260, 354, 120, 34), "Dismiss", false)
+	_draw_button(Rect2(260, 354, 120, 34), "Done" if str(notification_selected.get("type", "")) == "todo" else "Dismiss", false)
 	_draw_button(Rect2(416, 354, 120, 34), "Open", false)
 
 func _draw_notification_safe(rect: Rect2, label: String, message: String) -> void:
@@ -3887,7 +4786,7 @@ func _quick_shelf_subtitle(name: String) -> String:
 		return str(sound_percent) + "%"
 	if name == "Quiet Mode":
 		return "On" if quiet_mode_local else "Off"
-	if name in ["Diagnostics", "Settings", "Clock", "Network", "Camera", "Logs", "Reports", "Study", "Study Stats"]:
+	if name in ["Diagnostics", "Settings", "Clock", "Network", "Camera", "Logs", "Reports", "Study", "Study Stats", "Games"]:
 		return "Open"
 	return "Planned"
 
@@ -4024,6 +4923,264 @@ func _draw_calendar_form() -> void:
 	_draw_text("Repeat: None / Daily / Weekly / Monthly / Yearly", Vector2(48, 334), 9, ThemeScript.TEXT_DIM)
 	_draw_button(Rect2(44, 390, 170, 34), "Save", false)
 	_draw_button(Rect2(232, 390, 170, 34), "Cancel", false)
+
+func _draw_games() -> void:
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	if games_mode == "library":
+		_draw_games_library()
+	elif games_mode == "tic_tac_toe_menu":
+		_draw_tic_tac_toe_menu()
+	elif games_mode == "tic_tac_toe_game":
+		_draw_tic_tac_toe_game()
+	elif games_mode == "tic_tac_toe_result":
+		_draw_tic_tac_toe_game()
+		_draw_tic_tac_toe_result_modal()
+	elif games_mode == "exit_confirm":
+		_draw_tic_tac_toe_game()
+		_draw_tic_tac_toe_exit_confirm()
+	if games_help_open:
+		_draw_tic_tac_toe_help()
+
+func _draw_games_library() -> void:
+	_draw_text("Games", Vector2(30, 48), 26, ThemeScript.TEXT)
+	_draw_text("Choose a game", Vector2(32, 78), 12, ThemeScript.TEXT_MUTED)
+	_draw_pill(_games_exit_rect(), Color(0.10, 0.11, 0.13, 0.94), games_focus_index == 4)
+	_draw_centered_text("Exit", 566.0, 43.0, 12, ThemeScript.TEXT_MUTED)
+	var cards := [
+		{"title": "Tic-Tac-Toe", "subtitle": "X  O"},
+		{"title": "Coming Soon", "subtitle": "..."},
+		{"title": "Coming Soon", "subtitle": "..."},
+		{"title": "Coming Soon", "subtitle": "..."}
+	]
+	for index in range(cards.size()):
+		var rect := _games_card_rect(index)
+		var item: Dictionary = cards[index] as Dictionary
+		var selected := games_focus_index == index
+		_draw_card(rect, Color(0.11, 0.14, 0.19, 1.0) if selected else Color(0.070, 0.080, 0.098, 1.0), 18.0, false)
+		if selected:
+			_draw_rounded_outline(rect.grow(2.0), Color(0.28, 0.58, 1.0, 0.80), 20.0)
+		_draw_text(_short_text(str(item.get("title", "")), 18), rect.position + Vector2(18, 30), 17, ThemeScript.TEXT)
+		_draw_text(_short_text(str(item.get("subtitle", "")), 18), rect.position + Vector2(18, 58), 22 if index == 0 else 16, ThemeScript.TEXT_MUTED)
+
+func _draw_tic_tac_toe_top_bar(title: String) -> void:
+	_draw_button(_ttt_back_rect(), "Back", false)
+	_draw_centered_text(title, 320.0, 46.0, 20, ThemeScript.TEXT)
+	_draw_button(_ttt_exit_rect(), "Exit", false)
+
+func _draw_tic_tac_toe_menu() -> void:
+	_draw_tic_tac_toe_top_bar("Tic-Tac-Toe")
+	_draw_centered_text("Tic-Tac-Toe", 320.0, 132.0, 28, ThemeScript.TEXT)
+	_draw_centered_text("X  O", 320.0, 178.0, 35, ThemeScript.TEXT_MUTED)
+	var labels := ["Play with Someone", "Play with NeXa", "How to Play"]
+	for index in range(labels.size()):
+		_draw_button(_ttt_menu_button_rect(index), labels[index], tic_tac_toe_menu_focus_index == index)
+
+func _draw_tic_tac_toe_game() -> void:
+	_draw_tic_tac_toe_top_bar("Tic-Tac-Toe")
+	_draw_centered_text(_ttt_game_status_label(), 320.0, 88.0, 16, ThemeScript.TEXT_MUTED)
+	var board := _ttt_board_rect()
+	_draw_rounded_rect(board, Color(0.050, 0.058, 0.072, 1.0), 16.0)
+	_draw_rounded_outline(board, Color(1.0, 1.0, 1.0, 0.10), 16.0)
+	for index in range(9):
+		var cell := _ttt_cell_rect(index)
+		var mark := str(tic_tac_toe_board[index])
+		var selected := index == tic_tac_toe_selected_cell and not tic_tac_toe_game_over
+		var winning := _ttt_winning_cells().has(index)
+		var fill := Color(0.13, 0.16, 0.20, 1.0) if selected else Color(0.080, 0.092, 0.112, 1.0)
+		if winning:
+			fill = Color(0.13, 0.22, 0.18, 1.0)
+		_draw_rounded_rect(cell, fill, 10.0)
+		_draw_rounded_outline(cell, Color(0.30, 0.60, 1.0, 0.78) if selected else Color(1.0, 1.0, 1.0, 0.08), 10.0)
+		if mark != "":
+			_draw_centered_text(mark, cell.position.x + cell.size.x * 0.5, cell.position.y + 58.0, 48, ThemeScript.TEXT if mark == "X" else ThemeScript.TEXT_MUTED)
+	_draw_button(_ttt_new_game_rect(), "New Game", false)
+
+func _draw_tic_tac_toe_result_modal() -> void:
+	_draw_rounded_rect(Rect2(70, 146, 500, 250), Color(0.040, 0.047, 0.060, 0.985), 20.0)
+	_draw_rounded_outline(Rect2(70, 146, 500, 250), Color(0.34, 0.62, 1.0, 0.28), 20.0)
+	_draw_centered_text(_ttt_result_title(), 320.0, 214.0, 28, ThemeScript.TEXT)
+	var subtitle := "No winner this time." if tic_tac_toe_result == "draw" else "Nice move." if tic_tac_toe_result == TTT_PLAYER_X else "Try again."
+	_draw_centered_text(subtitle, 320.0, 252.0, 14, ThemeScript.TEXT_MUTED)
+	var labels := ["Play Again", "Back", "Exit"]
+	for index in range(labels.size()):
+		_draw_button(_ttt_result_button_rect(index), labels[index], tic_tac_toe_result_focus_index == index)
+
+func _draw_tic_tac_toe_exit_confirm() -> void:
+	_draw_rounded_rect(Rect2(100, 178, 440, 190), Color(0.040, 0.047, 0.060, 0.990), 20.0)
+	_draw_rounded_outline(Rect2(100, 178, 440, 190), Color(1.0, 0.80, 0.34, 0.26), 20.0)
+	_draw_centered_text("Exit game?", 320.0, 236.0, 24, ThemeScript.TEXT)
+	_draw_centered_text("Your current game will be lost.", 320.0, 270.0, 13, ThemeScript.TEXT_MUTED)
+	_draw_button(_ttt_exit_confirm_button_rect(0), "Cancel", true)
+	_draw_button(_ttt_exit_confirm_button_rect(1), "Exit", false)
+
+func _draw_tic_tac_toe_help() -> void:
+	_draw_rounded_rect(Rect2(80, 120, 480, 260), Color(0.040, 0.047, 0.060, 0.992), 20.0)
+	_draw_rounded_outline(Rect2(80, 120, 480, 260), Color(0.34, 0.62, 1.0, 0.30), 20.0)
+	_draw_centered_text("How to Play", 320.0, 172.0, 22, ThemeScript.TEXT)
+	_draw_text("Players take turns placing X and O.", Vector2(122, 214), 13, ThemeScript.TEXT_MUTED)
+	_draw_text("Get three in a row to win.", Vector2(122, 238), 13, ThemeScript.TEXT_MUTED)
+	_draw_text("In Play with NeXa, you are X.", Vector2(122, 262), 13, ThemeScript.TEXT_MUTED)
+	_draw_text("NeXa is O and moves locally.", Vector2(122, 286), 13, ThemeScript.TEXT_MUTED)
+	_draw_button(Rect2(190, 338, 260, 38), "Back", false)
+
+func _ttt_game_status_label() -> String:
+	if tic_tac_toe_game_over:
+		return _ttt_result_title()
+	if tic_tac_toe_nexa_thinking:
+		return "NeXa is thinking..."
+	if tic_tac_toe_mode == "nexa":
+		return "Your turn" if tic_tac_toe_current_player == TTT_PLAYER_X else "NeXa is thinking..."
+	return "Player " + tic_tac_toe_current_player + " turn"
+
+func _ttt_winning_cells() -> Array:
+	for raw_line in TTT_WIN_LINES:
+		var line: Array = raw_line as Array
+		var a := int(line[0])
+		var b := int(line[1])
+		var c := int(line[2])
+		var value := str(tic_tac_toe_board[a])
+		if value != TTT_EMPTY and value == str(tic_tac_toe_board[b]) and value == str(tic_tac_toe_board[c]):
+			return [a, b, c]
+	return []
+
+func _draw_todo() -> void:
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	_draw_text("To Do", Vector2(26, 44), 26, ThemeScript.TEXT)
+	_draw_pill(Rect2(520, 22, 92, 34), Color(0.10, 0.11, 0.13, 0.94), false)
+	_draw_centered_text("Home", 566.0, 43.0, 12, ThemeScript.TEXT_MUTED)
+	if todo_mode == "lists":
+		_draw_button(Rect2(412, 26, 92, 30), "New List", false)
+		_draw_todo_lists()
+	elif todo_mode == "list_detail":
+		_draw_todo_task_list()
+	elif todo_mode == "list_form":
+		_draw_todo_list_form()
+	elif todo_mode == "task_form":
+		_draw_todo_task_form()
+	elif todo_mode == "task_detail" or todo_mode == "delete_confirm":
+		_draw_todo_task_detail()
+	if todo_mode == "delete_confirm":
+		_draw_rounded_rect(Rect2(62, 286, 516, 128), Color(0.08, 0.04, 0.045, 0.98), 18.0)
+		_draw_rounded_outline(Rect2(62, 286, 516, 128), Color(1.0, 0.22, 0.22, 0.45), 18.0)
+		_draw_text("Delete this task?", Vector2(84, 320), 17, ThemeScript.TEXT)
+		_draw_text("This cannot be undone.", Vector2(84, 344), 11, ThemeScript.TEXT_MUTED)
+		_draw_button(Rect2(78, 354, 210, 42), "Cancel", false)
+		_draw_button(Rect2(352, 354, 210, 42), "Delete", true)
+	if todo_status_text != "":
+		_draw_text(_short_text(todo_status_text, 74), Vector2(34, 470), 10, ThemeScript.TEXT_DIM)
+	if text_input_open:
+		_draw_text_input_overlay()
+
+func _draw_todo_lists() -> void:
+	var view := _todo_lists_scroll_rect()
+	var lists := _todo_lists()
+	if lists.is_empty():
+		_draw_text("Inbox", Vector2(44, 112), 16, ThemeScript.TEXT_MUTED)
+	for index in range(lists.size()):
+		var item: Dictionary = lists[index] as Dictionary
+		var rect := _todo_list_card_rect(index)
+		if not _rect_visible(rect, view):
+			continue
+		_draw_card_if_visible(rect, view, Color(0.070, 0.080, 0.098, 1.0), 16.0)
+		_draw_text(_short_text(str(item.get("emoji", "📥")), 2), rect.position + Vector2(16, 38), 22, ThemeScript.TEXT)
+		_draw_text(_short_text(str(item.get("name", "Inbox")), 34), rect.position + Vector2(56, 26), 16, ThemeScript.TEXT)
+		var summary := str(item.get("total_tasks", 0)) + " tasks • " + str(item.get("active_tasks", 0)) + " active"
+		if int(item.get("overdue", 0)) > 0:
+			summary = str(item.get("total_tasks", 0)) + " tasks • " + str(item.get("overdue", 0)) + " overdue"
+		elif int(item.get("due_today", 0)) > 0:
+			summary = str(item.get("total_tasks", 0)) + " tasks • " + str(item.get("due_today", 0)) + " due today"
+		var color := ThemeScript.WARNING if int(item.get("overdue", 0)) > 0 else ThemeScript.TEXT_MUTED
+		_draw_text(_short_text(summary, 44), rect.position + Vector2(56, 48), 11, color)
+	_draw_scrollbar(view, todo_scroll_y, _todo_lists_content_height())
+
+func _draw_todo_task_list() -> void:
+	var list_raw = todo_tasks_data.get("list", {})
+	var list_item: Dictionary = list_raw if list_raw is Dictionary else {}
+	_draw_button(Rect2(30, 70, 74, 30), "Back", false)
+	_draw_text(_short_text(str(list_item.get("name", "Inbox")), 32), Vector2(118, 48), 20, ThemeScript.TEXT)
+	_draw_button(Rect2(400, 26, 92, 30), "Add Task", false)
+	var view := _todo_tasks_scroll_rect()
+	_draw_text("Active", Vector2(44, 128 - todo_task_scroll_y), 14, ThemeScript.TEXT_MUTED)
+	var active := _todo_active_tasks()
+	for index in range(active.size()):
+		_draw_todo_task_row(_todo_task_row_rect(index, false), active[index] as Dictionary, view, false)
+	var completed_y := 168.0 + float(active.size()) * 48.0 - todo_task_scroll_y
+	_draw_text("Completed", Vector2(44, completed_y), 14, ThemeScript.TEXT_MUTED)
+	var completed := _todo_completed_tasks()
+	for index in range(completed.size()):
+		_draw_todo_task_row(_todo_task_row_rect(index, true), completed[index] as Dictionary, view, true)
+	_draw_scrollbar(view, todo_task_scroll_y, _todo_tasks_content_height())
+
+func _draw_todo_task_row(rect: Rect2, task: Dictionary, view: Rect2, completed: bool) -> void:
+	if not _rect_visible(rect, view):
+		return
+	var selected := int(task.get("id", 0)) == todo_selected_task_id
+	_draw_rounded_rect(rect, Color(0.120, 0.132, 0.158, 1.0) if selected else Color(0.070, 0.080, 0.098, 1.0), 12.0)
+	_draw_text("✓" if completed else "○", rect.position + Vector2(12, 25), 13, ThemeScript.TEXT_MUTED)
+	var title_color := ThemeScript.TEXT_MUTED if completed else ThemeScript.TEXT
+	_draw_text(_short_text(str(task.get("title", "Task")), 42), rect.position + Vector2(38, 17), 12, title_color)
+	var detail := "Completed" if completed else _todo_task_detail_line(task)
+	_draw_text(_short_text(detail, 56), rect.position + Vector2(38, 33), 9, ThemeScript.TEXT_MUTED)
+
+func _draw_todo_list_form() -> void:
+	_draw_rounded_rect(Rect2(24, 104, 592, 336), Color(0.040, 0.047, 0.060, 0.985), 18.0)
+	_draw_text("New List", Vector2(44, 132), 20, ThemeScript.TEXT)
+	_draw_study_row(Rect2(44, 150, 120, 34), "Emoji", todo_list_form_emoji)
+	_draw_study_row(Rect2(178, 150, 418, 34), "List name", todo_list_form_name if todo_list_form_name != "" else "Study")
+	_draw_button(Rect2(44, 390, 170, 34), "Done", false)
+	_draw_button(Rect2(232, 390, 170, 34), "Cancel", false)
+
+func _draw_todo_task_form() -> void:
+	_draw_rounded_rect(Rect2(24, 92, 592, 368), Color(0.040, 0.047, 0.060, 0.985), 18.0)
+	_draw_text("Edit Task" if todo_selected_task_id > 0 else "Add Task", Vector2(44, 110), 18, ThemeScript.TEXT)
+	_draw_study_row(Rect2(44, 118, 552, 32), "Task", todo_form_title if todo_form_title != "" else "Tap to type")
+	_draw_study_row(Rect2(44, 156, 552, 32), "Notes", todo_form_notes if todo_form_notes != "" else "Optional")
+	_draw_button(Rect2(44, 202, 120, 32), "Reminder", todo_form_reminder_enabled)
+	_draw_reminder_form_field(Rect2(178, 202, 180, 32), "Date", todo_form_date)
+	_draw_reminder_form_field(Rect2(374, 202, 120, 32), "Time", todo_form_time)
+	_draw_button(Rect2(44, 250, 170, 32), _todo_repeat_label(), false)
+	_draw_button(Rect2(230, 250, 48, 32), "-", false)
+	_draw_button(Rect2(288, 250, 48, 32), "+", false)
+	_draw_text("Repeat: None / Every X hours / Every X days / Weekly / Monthly / Yearly", Vector2(48, 308), 9, ThemeScript.TEXT_DIM)
+	_draw_text("Snooze: 10 minutes / 30 minutes / 1 hour / Tomorrow", Vector2(48, 328), 9, ThemeScript.TEXT_DIM)
+	_draw_button(Rect2(44, 390, 170, 34), "Done", false)
+	_draw_button(Rect2(232, 390, 170, 34), "Cancel", false)
+
+func _draw_todo_task_detail() -> void:
+	_draw_rounded_rect(Rect2(24, 86, 592, 354), Color(0.045, 0.052, 0.064, 0.98), 18.0)
+	_draw_text(_short_text(str(todo_selected_task.get("title", "Task Details")), 48), Vector2(44, 124), 20, ThemeScript.TEXT)
+	_draw_text(_short_text(str(todo_selected_task.get("notes", "No notes")), 74), Vector2(44, 154), 11, ThemeScript.TEXT_MUTED)
+	_draw_study_row(Rect2(44, 190, 552, 34), "Reminder", _todo_task_detail_line(todo_selected_task))
+	_draw_study_row(Rect2(44, 234, 552, 34), "Repeat", _todo_task_repeat_line(todo_selected_task))
+	_draw_study_row(Rect2(44, 278, 552, 34), "Status", str(todo_selected_task.get("status", "active")).capitalize())
+	var primary := "Mark Active" if str(todo_selected_task.get("status", "active")) == "completed" else "Mark Done"
+	_draw_button(Rect2(44, 386, 116, 34), primary, false)
+	_draw_button(Rect2(174, 386, 92, 34), "Edit", false)
+	_draw_button(Rect2(280, 386, 92, 34), "Delete", false)
+	_draw_button(Rect2(386, 386, 92, 34), "Close", false)
+
+func _todo_task_detail_line(task: Dictionary) -> String:
+	var due_date := str(task.get("due_date", ""))
+	var due_time := str(task.get("due_time", ""))
+	if due_date == "" or due_time == "":
+		return "No reminder"
+	var prefix := "Overdue • " if bool(task.get("overdue", false)) else ""
+	return prefix + due_date + " " + due_time
+
+func _todo_task_repeat_line(task: Dictionary) -> String:
+	var unit := str(task.get("repeat_unit", "none"))
+	var interval := int(task.get("repeat_interval", 0))
+	if unit == "hours":
+		return "Every " + str(interval) + " hours"
+	if unit == "days":
+		return "Every " + str(interval) + " days"
+	if unit == "weekly":
+		return "Weekly"
+	if unit == "monthly":
+		return "Monthly"
+	if unit == "yearly":
+		return "Yearly"
+	return "None"
 
 func _calendar_weekday_rect(index: int) -> Rect2:
 	return Rect2(34.0 + float(index) * 82.0, 78.0, 76.0, 20.0)

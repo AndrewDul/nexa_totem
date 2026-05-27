@@ -123,6 +123,17 @@ The Godot UI now includes an Apple-like Settings Home with large rounded tiles a
 - Calendar draws English month/year headers, Previous/Next navigation, weekday labels, Sunday styling, today and selected-day highlights, and compact event indicators.
 - Calendar day details support selected-event Add/Edit/Delete flows, event time, reminder, snooze, and repeat options.
 - Calendar due notifications are local, global, and integrated into generic Control Center Notifications without deleting events.
+- To Do opens from Menu and Quick Shelf as a local task app with list cards, emoji lists, New List, and scroll support.
+- To Do list detail has Active and Completed sections, task details, Add/Edit/Delete, Mark Done, and Mark Active flows.
+- To Do task forms support local reminders, snooze options, and repeat choices for every X hours, every X days, weekly, monthly, and yearly schedules.
+- To Do due notifications are local, global, and integrated into generic Control Center Notifications without deleting tasks.
+- Completed To Do tasks remain visible and stop reminder notifications.
+- Games opens from Menu and Quick Shelf as a local Games Library.
+- Tic-Tac-Toe is the first local game and runs inside the existing 640x480 Godot LCD UI.
+- Tic-Tac-Toe supports Play with Someone and Play with NeXa.
+- Play with NeXa uses deterministic local move logic, not AI models, LLM calls, backend calls, or external services.
+- Games support touch, mouse, keyboard, and future joystick/remote input through shared NeXa input actions.
+- Tic-Tac-Toe keeps Back and Exit separate: Back returns to the game menu, while Exit returns to Face Home.
 - Display, Sound, Network, Remote, Diagnostics, Safety, About, and Exit NeXa pages are represented.
 - About shows NeXa ToTem project, author Andrzej Dul, DevDul, hardware, software, features, settings, and safety notes.
 - Safety and Exit NeXa actions are planned/safe only; the UI does not power off or reboot the Raspberry Pi.

@@ -535,3 +535,43 @@ I added day details, Add/Edit/Delete event flows, reminders, snooze, and repeat 
 I added lightweight calendar reminder polling and generic notifications integration.
 
 I kept the UI fixed at 640x480 and OpenGL/Compatibility.
+
+## 2026-05-26 — Local To Do App and Task Notifications
+
+I added the To Do app in Menu and Quick Shelf.
+
+I added a local SQLite To Do database under var/data/todo/nexa_todo.db.
+
+I added task lists with emoji, New List, and scrollable list cards.
+
+I added task list screens with Active and Completed sections.
+
+I added Add/Edit/Delete task flows, Mark Done, Mark Active, reminders, snooze, and repeat settings.
+
+I added To Do due reminder polling.
+
+I connected To Do reminders to the global notification modal and Control Center Notifications.
+
+I kept completed tasks visible but stopped their notifications.
+
+I kept the UI fixed at 640x480 and OpenGL/Compatibility.
+
+## 2026-05-26 — Local Games Library and Tic-Tac-Toe
+
+I added a local Games screen in Menu.
+
+I added Tic-Tac-Toe as the first local game.
+
+I kept the game inside the existing 640x480 Godot LCD UI, not as a separate window.
+
+I added Play with Someone and Play with NeXa.
+
+I made Play with NeXa use deterministic local logic, not AI models or LLM calls.
+
+I added input support for touch, mouse, keyboard and future remote/joystick through shared NeXa input actions.
+
+I added Back and Exit behavior, where Back returns to the game menu and Exit returns to Face Home.
+
+I kept the game lightweight for Raspberry Pi 5 2GB.
+
+I kept global notifications working above the game.

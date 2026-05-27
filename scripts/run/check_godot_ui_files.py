@@ -67,6 +67,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     study_store = REPO_ROOT / "system/services/study/study_store.py"
     reminders_store = REPO_ROOT / "system/services/reminders/reminders_store.py"
     calendar_store = REPO_ROOT / "system/services/calendar/calendar_store.py"
+    todo_store = REPO_ROOT / "system/services/todo/todo_store.py"
     api_client = scripts_dir / "diagnostics_api_client.gd"
 
     project_text = read_text(project_godot)
@@ -80,6 +81,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     study_store_text = read_text(study_store)
     reminders_store_text = read_text(reminders_store)
     calendar_store_text = read_text(calendar_store)
+    todo_store_text = read_text(todo_store)
     live_collectors_text = read_text(REPO_ROOT / "system/services/diagnostics/live_collectors.py")
     job_runner_text = read_text(REPO_ROOT / "system/services/diagnostics/job_runner.py")
     all_text = project_text + "\n" + read_text(main_scene)
@@ -101,6 +103,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("max_fps_30", "run/max_fps=30" in project_text or "application/run/max_fps=30" in project_text, "Project caps runtime at 30 FPS.")
     add("renderer_gl_compatibility", 'renderer/rendering_method="gl_compatibility"' in project_text, "Project uses Godot Compatibility renderer.")
     add("renderer_gl_compatibility_mobile", 'renderer/rendering_method.mobile="gl_compatibility"' in project_text, "Project mobile rendering method uses Compatibility renderer.")
+    add("renderer_no_forward_mobile_vulkan", all(term not in project_text.lower() for term in ["forward_plus", 'rendering_method="mobile"', "vulkan"]), "Project does not enable Forward+, Mobile, or Vulkan rendering.")
     add("not_fullscreen_default", "fullscreen=true" not in project_text.lower(), "Fullscreen is not configured by default.")
     add("windowed_intent", "--windowed" in read_text(run_dev), "Development launcher uses windowed mode.")
     add("fixed_resolution_intent", "--resolution 640x480" in read_text(run_dev), "Development launcher uses 640x480.")
@@ -113,6 +116,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("settings_store_exists", settings_store.exists(), "Settings store exists.")
     add("study_store_exists", study_store.exists(), "Study store exists.")
     add("reminders_store_exists", reminders_store.exists(), "Reminders store exists.")
+    add("todo_store_exists", todo_store.exists(), "To Do store exists.")
     add("api_localhost", "127.0.0.1" in live_api_text and "8769" in live_api_text, "API binds localhost port 8769.")
 
     for screen_name in SCREEN_NAMES:
@@ -127,8 +131,10 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("settings_api_endpoints", "/api/settings" in live_api_text and "/api/settings/update" in live_api_text and "/api/settings/update-many" in live_api_text and "/api/privacy/pin/set" in live_api_text and "/api/privacy/pin/verify" in live_api_text and "/api/privacy/status" in live_api_text, "Settings and privacy API endpoints exist.")
     add("study_api_endpoints", "/api/study/overview" in live_api_text and "/api/study/pomodoro/start" in live_api_text and "/api/study/flashcards/decks/create" in live_api_text and "/api/study/quizzes/create" in live_api_text and "/api/study/languages/lists/create" in live_api_text and "/api/study/stats" in live_api_text, "Study API endpoints exist.")
     add("reminders_api_endpoints", all(endpoint in live_api_text for endpoint in ["/api/reminders/overview", "/api/reminders/list", "/api/reminders/due", "/api/reminders/create", "/api/reminders/update", "/api/reminders/delete", "/api/reminders/dismiss", "/api/reminders/mark-triggered", "/api/reminders/settings/stats"]), "Reminders API endpoints exist.")
+    add("todo_api_endpoints", all(endpoint in live_api_text for endpoint in ["/api/todo/overview", "/api/todo/lists", "/api/todo/lists/create", "/api/todo/lists/update", "/api/todo/lists/delete", "/api/todo/tasks", "/api/todo/tasks/create", "/api/todo/tasks/update", "/api/todo/tasks/delete", "/api/todo/tasks/mark-done", "/api/todo/tasks/mark-active", "/api/todo/due", "/api/todo/dismiss", "/api/todo/snooze", "/api/todo/settings/stats"]), "To Do API endpoints exist.")
     add("study_sqlite_store", "sqlite3" in study_store_text and "var/data/study/nexa_study.db" in study_store_text and "NEXA_STUDY_DB_PATH" in study_store_text, "Study store uses local SQLite with test DB override.")
     add("reminders_sqlite_store", "sqlite3" in reminders_store_text and "var/data/reminders/nexa_reminders.db" in reminders_store_text and "NEXA_REMINDERS_DB_PATH" in reminders_store_text and "PRAGMA user_version = 1" in reminders_store_text, "Reminders store uses local SQLite with schema version and test DB override.")
+    add("todo_sqlite_store", "sqlite3" in todo_store_text and "var/data/todo/nexa_todo.db" in todo_store_text and "NEXA_TODO_DB_PATH" in todo_store_text and "PRAGMA user_version = 1" in todo_store_text and "todo_lists" in todo_store_text and "todo_tasks" in todo_store_text, "To Do store uses local SQLite with schema version and test DB override.")
     add("study_duplicate_similar", "normalize_name" in study_store_text and "SequenceMatcher" in study_store_text and '"duplicate"' in study_store_text and '"similar"' in study_store_text, "Study store has duplicate and similar detection.")
     add("pin_hash_hidden", "pin_hash" in settings_store_text and "pin_salt" in settings_store_text and "safe_settings" in settings_store_text and "SENSITIVE_KEYS" in settings_store_text, "Settings API can remove PIN hash and salt.")
     add("pin_four_digits", "valid_pin" in settings_store_text and "len(pin) == 4" in settings_store_text and "pin.isdigit()" in settings_store_text, "PIN is constrained to four digits.")
@@ -175,7 +181,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     menu_tap_func = main_text.split("func _handle_menu_tap", 1)[1].split("func _handle_diagnostics_tap", 1)[0] if "func _handle_menu_tap" in main_text and "func _handle_diagnostics_tap" in main_text else ""
     add("menu_time_opens_clock", 'tile["title"] == "Time"' in menu_tap_func and "_open_clock()" in menu_tap_func, "Menu Time tile opens Clock.")
     add("menu_study_opens_study", 'tile["title"] == "Study"' in menu_tap_func and '_open_study("home")' in menu_tap_func, "Menu Study tile opens Study.")
-    for subtitle in ["Clock", "Focus", "Alerts", "Events", "To-do", "Play", "System", "Setup"]:
+    for subtitle in ["Clock", "Focus", "Alerts", "Events", "Tasks", "Play", "System", "Setup"]:
         add(f"menu_subtitle_{subtitle}", f'"subtitle": "{subtitle}"' in main_text, f"Menu subtitle {subtitle} is represented.")
     add("control_center_cards", "Control Center" in main_text and "var controls: Array" in main_text and "_draw_notification" in main_text, "Control Center card drawing is represented.")
     add("control_center_safe_mode", "CONTROL_CENTER_SAFE_MODE := true" in main_text and "_draw_control_center_safe" in main_text, "Control Center safe drawing mode exists.")
@@ -263,6 +269,48 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("calendar_due_polling", "calendar_poll_accumulator" in main_text and "calendar_interval := 5.0 if calendar_due_modal_open else 30.0" in main_text and 'api.request_get("/api/calendar/due")' in main_text, "Calendar due polling exists and is not every frame.")
     add("calendar_notifications", '"type": "calendar"' in main_text and '"Calendar"' in main_text and '"/api/calendar/dismiss"' in main_text and '"/api/calendar/snooze"' in main_text and "calendar_due_modal_open" in main_text and "_dismiss_pending_calendar_notification" in main_text, "Calendar due notifications integrate with generic notifications.")
     add("calendar_no_fake_data", '"Study Java"' not in main_text and '"Dentist"' not in main_text and "No fake" not in main_text, "Calendar UI has no hardcoded fake event rows.")
+    add("todo_screen", 'nav.current_screen == "To Do"' in main_text and "func _draw_todo" in main_text and "func _handle_todo_tap" in main_text, "To Do screen exists.")
+    add("menu_todo_action", 'tile["title"] == "To Do"' in main_text and "_open_todo()" in main_text, "Menu To Do opens To Do.")
+    add("quick_shelf_todo_action", 'tile_name == "To Do"' in main_text and "_open_todo()" in main_text and '"To Do"' in main_text.split("const QUICK_SHELF_OPTIONS", 1)[1].split("const STUDY_TILES", 1)[0], "Quick Shelf To Do opens To Do.")
+    add("todo_main_new_list", '"To Do"' in main_text and '"New List"' in main_text and "func _draw_todo_lists" in main_text, "To Do main screen has title, New List, and list cards.")
+    add("todo_new_list_aligned_home", 'Rect2(412, 26, 92, 30), "New List"' in main_text and 'if Rect2(412, 26, 92, 30).has_point(position):' in main_text and 'Rect2(520, 22, 92, 34)' in main_text and 'Rect2(412, 30, 92, 30), "New List"' not in main_text, "New List is aligned near Home and its tap hitbox matches the visible button.")
+    add("todo_scroll", "todo_scroll_y" in main_text and "todo_task_scroll_y" in main_text and "_todo_lists_scroll_rect" in main_text and "_todo_tasks_scroll_rect" in main_text and "_draw_scrollbar(view, todo_scroll_y" in main_text, "To Do list and task scrolling exists.")
+    add("todo_list_form", "func _draw_todo_list_form" in main_text and '"Emoji"' in main_text and '"List name"' in main_text and '"/api/todo/lists/create"' in main_text, "New List form exists with emoji and list name.")
+    add("todo_task_list", "func _draw_todo_task_list" in main_text and '"Add Task"' in main_text and '"Active"' in main_text and '"Completed"' in main_text, "Task list screen has Add Task plus Active and Completed sections.")
+    add("todo_detail_back_below_header", 'Rect2(30, 70, 74, 30), "Back"' in main_text and 'if Rect2(30, 70, 74, 30).has_point(position):' in main_text and 'Rect2(30, 30, 74, 30), "Back"' not in main_text, "To Do detail Back button sits below the title/header and its tap hitbox matches.")
+    add("todo_detail_add_task_clear_home", 'Rect2(400, 26, 92, 30), "Add Task"' in main_text and 'if Rect2(400, 26, 92, 30).has_point(position):' in main_text and 'Rect2(496, 30, 92, 30), "Add Task"' not in main_text, "To Do detail Add Task button is left of Home and its tap hitbox matches.")
+    todo_task_list_draw = main_text.split("func _draw_todo_task_list", 1)[1].split("func _draw_todo_task_row", 1)[0] if "func _draw_todo_task_list" in main_text and "func _draw_todo_task_row" in main_text else ""
+    add("todo_detail_header_name_only", 'str(list_item.get("name", "Inbox"))' in todo_task_list_draw and 'str(list_item.get("emoji", "📥")) + " " + str(list_item.get("name", "Inbox"))' not in todo_task_list_draw, "To Do detail header renders only the list name, without emoji concatenation.")
+    add("todo_task_content_below_back", "return Rect2(24, 108, 592, 344)" in main_text and 'Vector2(44, 128 - todo_task_scroll_y)' in main_text and "var y := 146.0" in main_text, "To Do task list content starts below the lowered Back button.")
+    add("todo_task_detail", "func _draw_todo_task_detail" in main_text and '"Mark Done"' in main_text and '"Mark Active"' in main_text and '"Edit"' in main_text and '"Delete"' in main_text, "Task Details panel exists with task actions.")
+    add("todo_task_delete_confirm", '"Delete this task?"' in main_text and "DELETE_TODO_TASK" in main_text and '"/api/todo/tasks/delete"' in main_text, "Task delete confirmation exists.")
+    add("todo_task_form", "func _draw_todo_task_form" in main_text and "todo_form_title" in main_text and "todo_form_date" in main_text and "todo_form_time" in main_text and '{"keyboard_mode": "datetime"}' in main_text, "Task form exists with datetime keyboard fields.")
+    add("todo_repeat_options", all(term in main_text for term in ["Repeat: None / Every X hours / Every X days / Weekly / Monthly / Yearly", "_todo_cycle_repeat", "Every X hours", "Every X days", "Weekly", "Monthly", "Yearly"]), "To Do repeat options exist.")
+    add("todo_due_polling", "todo_poll_accumulator" in main_text and "todo_interval := 5.0 if todo_due_modal_open else 30.0" in main_text and 'api.request_get("/api/todo/due")' in main_text, "To Do due polling exists and is not every frame.")
+    add("todo_notifications", '"type": "todo"' in main_text and '"To Do"' in main_text and '"/api/todo/dismiss"' in main_text and '"/api/todo/snooze"' in main_text and '"/api/todo/tasks/mark-done"' in main_text and "todo_due_modal_open" in main_text, "To Do due notifications integrate with generic notifications.")
+    add("todo_global_modal", "todo_due_modal_open" in main_text.split("func _draw_global_overlays", 1)[1].split("func _draw_transition", 1)[0] and "todo_due_modal_open" in main_text.split("func _handle_tap", 1)[1].split("func _handle_menu_tap", 1)[0] and '"To Do Reminder"' in main_text, "To Do global modal draws and handles input before screen taps.")
+    add("todo_notification_dismiss_safe", '"/api/todo/tasks/delete"' not in notification_dismiss_func and '"/api/todo/dismiss"' in notification_dismiss_func, "To Do notification removal does not delete tasks.")
+    add("todo_no_fake_notifications", '"To Do reminders will appear here"' not in main_text and '"Fake To Do"' not in main_text, "No fake To Do notification rows exist.")
+    games_source = ""
+    if "func _games_card_rect" in main_text and "func _open_menu" in main_text:
+        games_source += main_text.split("func _games_card_rect", 1)[1].split("func _open_menu", 1)[0]
+    if "func _draw_games" in main_text and "func _draw_todo" in main_text:
+        games_source += main_text.split("func _draw_games", 1)[1].split("func _draw_todo", 1)[0]
+    add("menu_games_tile", '{"icon": "◆", "title": "Games", "subtitle": "Play"}' in main_text, "Menu Games tile exists.")
+    add("menu_games_action", 'tile["title"] == "Games"' in main_text and "_open_games()" in main_text, "Menu Games opens Games.")
+    add("games_screen", 'nav.current_screen = "Games"' in main_text and '"Games":' in main_text and "func _draw_games" in main_text and "func _handle_games_tap" in main_text, "Games screen exists in the Godot router.")
+    add("games_library", "func _draw_games_library" in main_text and '"Tic-Tac-Toe"' in main_text and '"Coming Soon"' in main_text and '"Choose a game"' in main_text and '"Exit"' in main_text, "Games Library has Tic-Tac-Toe, Coming Soon cards, and Exit.")
+    add("tic_tac_toe_menu", "func _draw_tic_tac_toe_menu" in main_text and '"Play with Someone"' in main_text and '"Play with NeXa"' in main_text and '"How to Play"' in main_text and '"Back"' in main_text and '"Exit"' in main_text, "Tic-Tac-Toe menu has play modes, help, Back, and Exit.")
+    add("tic_tac_toe_game_screen", "func _draw_tic_tac_toe_game" in main_text and "func _ttt_cell_rect" in main_text and "for index in range(9)" in main_text and "tic_tac_toe_selected_cell" in main_text, "Tic-Tac-Toe game screen has a 3x3 board and selected cell.")
+    add("tic_tac_toe_navigation", all(term in main_text for term in ['direction == "left"', 'tic_tac_toe_selected_cell not in [0, 3, 6]', 'direction == "right"', 'tic_tac_toe_selected_cell not in [2, 5, 8]', 'direction == "up"', 'tic_tac_toe_selected_cell not in [0, 1, 2]', 'direction == "down"', 'tic_tac_toe_selected_cell not in [6, 7, 8]', "_ttt_play_selected_cell()"]), "Tic-Tac-Toe board navigation and accept placement exist.")
+    add("tic_tac_toe_logic", all(term in main_text for term in ["TTT_WIN_LINES", "func _ttt_get_winner", "func _ttt_is_draw", "func _ttt_available_moves", "func _ttt_choose_nexa_move", "func _ttt_find_winning_move", "func _ttt_winner_for_board"]), "Tic-Tac-Toe local win/draw/move logic exists.")
+    add("tic_tac_toe_nexa_order", all(term in main_text for term in ["var winning_move := _ttt_find_winning_move(TTT_PLAYER_O)", "var blocking_move := _ttt_find_winning_move(TTT_PLAYER_X)", "tic_tac_toe_board[4]", "for corner in [0, 2, 6, 8]", "return int(moves[0])"]), "NeXa move order is win, block, center, corner, free.")
+    add("tic_tac_toe_result_modal", "func _draw_tic_tac_toe_result_modal" in main_text and '"Play Again"' in main_text and "_ttt_activate_result_button" in main_text, "Tic-Tac-Toe result modal has Play Again, Back, and Exit.")
+    add("games_exit_confirm", "func _draw_tic_tac_toe_exit_confirm" in main_text and '"Exit game?"' in main_text and '"Your current game will be lost."' in main_text and "_games_exit_pressed" in main_text, "Active game exit confirmation exists.")
+    add("games_input_actions", all(action in project_text for action in ["nexa_up", "nexa_down", "nexa_left", "nexa_right", "nexa_accept", "nexa_back", "nexa_exit"]) and "_handle_games_action_event" in main_text, "Shared NeXa input actions exist for keyboard and future remote/joystick.")
+    add("games_hitboxes_match_draw", all(term in main_text for term in ["_games_card_rect(index)", "_ttt_menu_button_rect(index)", "_ttt_cell_rect(index)", "_ttt_back_rect()", "_ttt_exit_rect()", "_ttt_new_game_rect()", "_ttt_result_button_rect(index)"]), "Games visible rects and tap hitboxes use shared rect helpers.")
+    add("games_no_network_ai", all(term not in games_source.lower() for term in ["api.request", "http", "llm", "model", "openai"]) and "NeXa is thinking" in games_source, "Tic-Tac-Toe uses no HTTP/API/LLM/model calls.")
+    add("games_global_overlays", "_draw_global_overlays()" in main_text and "_draw_screen(nav.current_screen" in main_text and "if (reminders_due_modal_open or calendar_due_modal_open or todo_due_modal_open) and _handle_due_notification_modal_tap(position):" in main_text, "Global notification overlays still draw above Games and tap first.")
     add("study_screen", 'nav.current_screen == "Study"' in main_text and "func _draw_study" in main_text and "STUDY_TILES" in main_text, "Study screen exists.")
     study_tiles_const = main_text.split("const STUDY_TILES", 1)[1].split("var nav", 1)[0] if "const STUDY_TILES" in main_text and "var nav" in main_text else ""
     add("study_home_tiles", all(tile in study_tiles_const for tile in ["Smart Study", "Flashcards", "Quizzes", "Languages", "Study Stats", "History", "Settings"]) and '"Pomodoro"' not in study_tiles_const and '"Back"' not in study_tiles_const, "Study Home has Smart Study and no Pomodoro/Back tile.")

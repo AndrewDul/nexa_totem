@@ -35,6 +35,11 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("run/max_fps=30", project)
         self.assertIn('renderer/rendering_method="gl_compatibility"', project)
         self.assertIn('renderer/rendering_method.mobile="gl_compatibility"', project)
+        self.assertNotIn("forward_plus", project)
+        self.assertNotIn('rendering_method="mobile"', project)
+        self.assertNotIn("vulkan", project.lower())
+        for action in ["nexa_up", "nexa_down", "nexa_left", "nexa_right", "nexa_accept", "nexa_back", "nexa_exit"]:
+            self.assertIn(action, project)
 
     def test_fullscreen_is_not_default_for_this_sprint(self):
         project = self.read(GODOT_DIR / "project.godot").lower()
@@ -176,7 +181,7 @@ class GodotUiStructureTests(unittest.TestCase):
             "Focus",
             "Alerts",
             "Events",
-            "To-do",
+            "Tasks",
             "Play",
             "System",
             "Setup",
@@ -427,6 +432,142 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("sqlite3", store)
         self.assertIn("var/data/calendar/nexa_calendar.db", store)
         self.assertIn("NEXA_CALENDAR_DB_PATH", store)
+
+    def test_todo_screen_and_notifications_are_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        live_api = self.read(REPO_ROOT / "system/services/diagnostics/live_api.py")
+        store = self.read(REPO_ROOT / "system/services/todo/todo_store.py")
+        self.assertIn('nav.current_screen == "To Do"', main)
+        self.assertIn("func _draw_todo", main)
+        self.assertIn("func _handle_todo_tap", main)
+        self.assertIn('tile["title"] == "To Do"', main)
+        self.assertIn('tile_name == "To Do"', main)
+        self.assertIn("_open_todo()", main)
+        self.assertIn('"New List"', main)
+        self.assertIn("func _draw_todo_lists", main)
+        self.assertIn('_draw_button(Rect2(412, 26, 92, 30), "New List", false)', main)
+        self.assertIn("if Rect2(412, 26, 92, 30).has_point(position):", main)
+        self.assertNotIn('_draw_button(Rect2(412, 30, 92, 30), "New List", false)', main)
+        self.assertIn("todo_scroll_y", main)
+        self.assertIn("todo_task_scroll_y", main)
+        self.assertIn("_todo_lists_scroll_rect", main)
+        self.assertIn("_todo_tasks_scroll_rect", main)
+        self.assertIn("func _draw_todo_list_form", main)
+        self.assertIn('"Emoji"', main)
+        self.assertIn('"List name"', main)
+        self.assertIn("func _draw_todo_task_list", main)
+        self.assertIn('"Add Task"', main)
+        self.assertIn('_draw_button(Rect2(400, 26, 92, 30), "Add Task", false)', main)
+        self.assertIn("if Rect2(400, 26, 92, 30).has_point(position):", main)
+        self.assertNotIn('_draw_button(Rect2(496, 30, 92, 30), "Add Task", false)', main)
+        self.assertIn('_draw_button(Rect2(30, 70, 74, 30), "Back", false)', main)
+        self.assertIn("if Rect2(30, 70, 74, 30).has_point(position):", main)
+        self.assertNotIn('_draw_button(Rect2(30, 30, 74, 30), "Back", false)', main)
+        todo_task_list_draw = main.split("func _draw_todo_task_list", 1)[1].split("func _draw_todo_task_row", 1)[0]
+        self.assertIn('str(list_item.get("name", "Inbox"))', todo_task_list_draw)
+        self.assertNotIn('str(list_item.get("emoji", "📥")) + " " + str(list_item.get("name", "Inbox"))', todo_task_list_draw)
+        self.assertIn("return Rect2(24, 108, 592, 344)", main)
+        self.assertIn("Vector2(44, 128 - todo_task_scroll_y)", main)
+        self.assertIn("var y := 146.0", main)
+        self.assertIn('"Active"', main)
+        self.assertIn('"Completed"', main)
+        self.assertIn("func _draw_todo_task_detail", main)
+        for text in ['"Mark Done"', '"Mark Active"', '"Edit"', '"Delete"']:
+            self.assertIn(text, main)
+        self.assertIn('"Delete this task?"', main)
+        self.assertIn("DELETE_TODO_TASK", main)
+        self.assertIn("func _draw_todo_task_form", main)
+        self.assertIn("todo_form_title", main)
+        self.assertIn("todo_form_date", main)
+        self.assertIn("todo_form_time", main)
+        self.assertIn('{"keyboard_mode": "datetime"}', main)
+        for text in ["Repeat: None / Every X hours / Every X days / Weekly / Monthly / Yearly", "Snooze: 10 minutes / 30 minutes / 1 hour / Tomorrow"]:
+            self.assertIn(text, main)
+        self.assertIn("todo_poll_accumulator", main)
+        self.assertIn("todo_interval := 5.0 if todo_due_modal_open else 30.0", main)
+        self.assertIn('api.request_get("/api/todo/due")', main)
+        self.assertIn('"type": "todo"', main)
+        self.assertIn('"To Do Reminder"', main)
+        self.assertIn('"/api/todo/dismiss"', main)
+        self.assertIn('"/api/todo/snooze"', main)
+        self.assertIn('"/api/todo/tasks/mark-done"', main)
+        global_draw = main.split("func _draw_global_overlays", 1)[1].split("func _draw_transition", 1)[0]
+        self.assertIn("todo_due_modal_open", global_draw)
+        tap_func = main.split("func _handle_tap", 1)[1].split("func _handle_menu_tap", 1)[0]
+        self.assertIn("todo_due_modal_open", tap_func)
+        dismiss_func = main.split("func _dismiss_notification", 1)[1].split("func _dismiss_pending_due_notification", 1)[0]
+        self.assertIn('/api/todo/dismiss', dismiss_func)
+        self.assertNotIn('/api/todo/tasks/delete', dismiss_func)
+        for endpoint in ["/api/todo/overview", "/api/todo/lists", "/api/todo/lists/create", "/api/todo/lists/update", "/api/todo/lists/delete", "/api/todo/tasks", "/api/todo/tasks/create", "/api/todo/tasks/update", "/api/todo/tasks/delete", "/api/todo/tasks/mark-done", "/api/todo/tasks/mark-active", "/api/todo/due", "/api/todo/dismiss", "/api/todo/snooze", "/api/todo/settings/stats"]:
+            self.assertIn(endpoint, live_api)
+        self.assertIn("sqlite3", store)
+        self.assertIn("var/data/todo/nexa_todo.db", store)
+        self.assertIn("NEXA_TODO_DB_PATH", store)
+        self.assertIn("todo_notification_log", store)
+
+    def test_games_and_tic_tac_toe_are_represented(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        project = self.read(GODOT_DIR / "project.godot")
+        self.assertIn('{"icon": "◆", "title": "Games", "subtitle": "Play"}', main)
+        self.assertIn('tile["title"] == "Games"', main)
+        self.assertIn("_open_games()", main)
+        self.assertIn('nav.current_screen = "Games"', main)
+        self.assertIn('"Games":', main)
+        self.assertIn("func _draw_games", main)
+        self.assertIn("func _handle_games_tap", main)
+        for text in ['"Tic-Tac-Toe"', '"Coming Soon"', '"Choose a game"', '"Exit"', '"Back"']:
+            self.assertIn(text, main)
+        for text in ['"Play with Someone"', '"Play with NeXa"', '"How to Play"']:
+            self.assertIn(text, main)
+        self.assertIn("func _draw_tic_tac_toe_game", main)
+        self.assertIn("func _ttt_cell_rect", main)
+        self.assertIn("for index in range(9)", main)
+        self.assertIn("tic_tac_toe_selected_cell", main)
+        for action in ["nexa_up", "nexa_down", "nexa_left", "nexa_right", "nexa_accept", "nexa_back", "nexa_exit"]:
+            self.assertIn(action, project)
+        self.assertIn("_handle_games_action_event", main)
+        for term in [
+            'direction == "left"',
+            "tic_tac_toe_selected_cell not in [0, 3, 6]",
+            'direction == "right"',
+            "tic_tac_toe_selected_cell not in [2, 5, 8]",
+            'direction == "up"',
+            "tic_tac_toe_selected_cell not in [0, 1, 2]",
+            'direction == "down"',
+            "tic_tac_toe_selected_cell not in [6, 7, 8]",
+            "_ttt_play_selected_cell()",
+        ]:
+            self.assertIn(term, main)
+        for term in ["_games_card_rect(index)", "_ttt_menu_button_rect(index)", "_ttt_cell_rect(index)", "_ttt_back_rect()", "_ttt_exit_rect()", "_ttt_new_game_rect()", "_ttt_result_button_rect(index)"]:
+            self.assertIn(term, main)
+        self.assertIn("func _draw_tic_tac_toe_result_modal", main)
+        self.assertIn('"Play Again"', main)
+        self.assertIn("func _draw_tic_tac_toe_exit_confirm", main)
+        self.assertIn('"Exit game?"', main)
+        self.assertIn('"Your current game will be lost."', main)
+        global_draw = main.split("func _draw", 1)[1].split("func _draw_global_overlays", 1)[0]
+        self.assertIn("_draw_global_overlays()", global_draw)
+        tap_prefix = main.split("func _handle_tap", 1)[1].split("func _handle_menu_tap", 1)[0]
+        self.assertIn("_handle_due_notification_modal_tap(position)", tap_prefix)
+
+    def test_tic_tac_toe_local_logic_is_static_and_deterministic(self):
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        games_source = main.split("func _games_card_rect", 1)[1].split("func _open_menu", 1)[0]
+        games_source += main.split("func _draw_games", 1)[1].split("func _draw_todo", 1)[0]
+        self.assertIn("[0, 1, 2]", main)
+        self.assertIn("[0, 3, 6]", main)
+        self.assertIn("[2, 4, 6]", main)
+        for term in ["func _ttt_can_play", "func _ttt_play", "func _ttt_get_winner", "func _ttt_is_draw", "func _ttt_available_moves", "func _ttt_switch_turn", "func _ttt_choose_nexa_move", "func _ttt_find_winning_move", "func _ttt_winner_for_board"]:
+            self.assertIn(term, main)
+        self.assertIn("index >= 0 and index < 9", main)
+        self.assertIn("str(tic_tac_toe_board[index]) == TTT_EMPTY", main)
+        self.assertIn("var winning_move := _ttt_find_winning_move(TTT_PLAYER_O)", main)
+        self.assertIn("var blocking_move := _ttt_find_winning_move(TTT_PLAYER_X)", main)
+        self.assertIn("tic_tac_toe_board[4]", main)
+        self.assertIn("for corner in [0, 2, 6, 8]", main)
+        self.assertIn("return int(moves[0])", main)
+        for forbidden in ["api.request", "http", "llm", "openai"]:
+            self.assertNotIn(forbidden, games_source.lower())
 
     def test_benchmark_and_camera_layout_are_runtime_safe(self):
         main = self.read(GODOT_DIR / "scripts/main.gd")

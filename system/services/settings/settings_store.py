@@ -100,6 +100,7 @@ DEFAULT_SETTINGS = {
             "Quiet Mode",
             "Network",
             "Reminders",
+            "To Do",
             "Study",
             "Diagnostics",
             "Settings",

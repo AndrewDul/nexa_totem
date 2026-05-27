@@ -29,6 +29,7 @@ from system.services.settings import settings_store
 from system.services.study import study_store
 from system.services.reminders import reminders_store
 from system.services.calendar import calendar_store
+from system.services.todo import todo_store
 
 
 HOST = "127.0.0.1"
@@ -155,6 +156,16 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
                 self._json(calendar_store.due())
             elif path == "/api/calendar/settings/stats":
                 self._json(calendar_store.settings_stats())
+            elif path == "/api/todo/overview":
+                self._json(todo_store.overview())
+            elif path == "/api/todo/lists":
+                self._json(todo_store.lists())
+            elif path == "/api/todo/tasks":
+                self._json(todo_store.tasks(_query_int(query, "list_id")))
+            elif path == "/api/todo/due":
+                self._json(todo_store.due())
+            elif path == "/api/todo/settings/stats":
+                self._json(todo_store.settings_stats())
             elif path == "/api/overview":
                 self._json(cached(STATE, "overview", TTL_SECONDS["overview"], lambda: overview_data(STATE)))
             elif path == "/api/system":
@@ -278,6 +289,26 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
             self._json(calendar_store.dismiss(data.get("event_id", data.get("id", 0)), data.get("occurrence_start", "")))
         elif path == "/api/calendar/snooze":
             self._json(calendar_store.snooze(data.get("event_id", data.get("id", 0)), data.get("minutes", 10)))
+        elif path == "/api/todo/lists/create":
+            self._json(todo_store.create_list(data.get("name", ""), data.get("emoji", "📥")))
+        elif path == "/api/todo/lists/update":
+            self._json(todo_store.update_list(data.get("id", 0), data.get("name", ""), data.get("emoji", "📥")))
+        elif path == "/api/todo/lists/delete":
+            self._json(todo_store.delete_list(data.get("id", 0), data.get("confirm_text", "")))
+        elif path == "/api/todo/tasks/create":
+            self._json(todo_store.create_task(data.get("list_id", 0), data.get("title", ""), data.get("notes", ""), data.get("due_date", ""), data.get("due_time", ""), bool(data.get("reminder_enabled", False)), data.get("repeat_unit", "none"), data.get("repeat_interval", 0)))
+        elif path == "/api/todo/tasks/update":
+            self._json(todo_store.update_task(data.get("id", 0), data.get("list_id", 0), data.get("title", ""), data.get("notes", ""), data.get("due_date", ""), data.get("due_time", ""), bool(data.get("reminder_enabled", False)), data.get("repeat_unit", "none"), data.get("repeat_interval", 0), data.get("status", "active")))
+        elif path == "/api/todo/tasks/delete":
+            self._json(todo_store.delete_task(data.get("id", 0), data.get("confirm_text", "")))
+        elif path == "/api/todo/tasks/mark-done":
+            self._json(todo_store.mark_done(data.get("id", data.get("task_id", 0))))
+        elif path == "/api/todo/tasks/mark-active":
+            self._json(todo_store.mark_active(data.get("id", data.get("task_id", 0))))
+        elif path == "/api/todo/dismiss":
+            self._json(todo_store.dismiss(data.get("task_id", data.get("id", 0))))
+        elif path == "/api/todo/snooze":
+            self._json(todo_store.snooze(data.get("task_id", data.get("id", 0)), data.get("minutes", 10)))
         elif path == "/api/benchmarks/run":
             self._json(start_benchmarks(STATE))
         elif path == "/api/reports/generate":
@@ -337,6 +368,7 @@ def make_server(host=HOST, port=PORT):
     study_store.initialize()
     reminders_store.initialize()
     calendar_store.initialize()
+    todo_store.initialize()
     return ThreadingHTTPServer((host, port), DiagnosticsHandler)
 
 
