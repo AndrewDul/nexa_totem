@@ -58,6 +58,7 @@ const INACTIVITY_EXEMPT_SCREENS := ["Games"]
 const MENU_TILES := [
 	{"icon": "◷", "title": "Time", "subtitle": "Clock"},
 	{"icon": "◌", "title": "Study", "subtitle": "Focus"},
+	{"icon": "⌁", "title": "Environment", "subtitle": "Air & room"},
 	{"icon": "!", "title": "Reminders", "subtitle": "Alerts"},
 	{"icon": "□", "title": "Calendar", "subtitle": "Events"},
 	{"icon": "✓", "title": "To Do", "subtitle": "Tasks"},
@@ -123,6 +124,22 @@ var network_detail_pending := false
 var overview_live_data := {}
 var active_tab_data := {}
 var api_poll_accumulator := 0.0
+var hardware_state_data := {}
+var hardware_connected := false
+var hardware_stale := true
+var hardware_last_seen_at := ""
+var hardware_poll_elapsed := 0.0
+var hardware_poll_interval_seconds := 1.0
+var last_seen_user_at := 0.0
+var hardware_presence_active := false
+var presence_absence_seconds := 0.0
+var presence_show_clock_after_seconds := 30.0
+var clock_shown_for_absence := false
+var hardware_last_joystick := "CENTER"
+var hardware_last_joystick_action_at := 0.0
+var joystick_repeat_delay_seconds := 0.35
+var joystick_select_cooldown_seconds := 0.5
+var hardware_menu_focus_index := 0
 var control_center_refresh_pending := false
 var brightness_percent := 65
 var sound_percent := 50
@@ -378,6 +395,7 @@ func _ready() -> void:
 	_apply_home_behavior("startup_greeting")
 	_start_startup_sequence()
 	api.request_get("/api/settings")
+	api.request_get("/api/hardware/state")
 	_request_redraw()
 
 func _process(delta: float) -> void:
@@ -388,6 +406,7 @@ func _process(delta: float) -> void:
 		_update_startup_sequence(delta)
 	_update_face_behavior(delta)
 	_update_inactivity(delta)
+	_update_presence_face_clock(delta)
 	if transition_active:
 		transition_progress = minf(1.0, transition_progress + delta / transition_duration)
 		if transition_progress >= 1.0:
@@ -614,6 +633,10 @@ func _handle_tap(position: Vector2) -> void:
 	if nav.current_screen == "Menu":
 		_handle_menu_tap(position)
 		return
+	if nav.current_screen == "Environment":
+		if Rect2(520, 22, 92, 34).has_point(position):
+			_go_home()
+		return
 	if nav.current_screen == "Notification Control Center":
 		_handle_control_center_tap(position)
 		return
@@ -653,11 +676,14 @@ func _handle_menu_tap(position: Vector2) -> void:
 	for index in range(MENU_TILES.size()):
 		var rect: Rect2 = _menu_tile_rect(index)
 		if rect.has_point(position):
+			hardware_menu_focus_index = index
 			var tile: Dictionary = MENU_TILES[index] as Dictionary
 			if tile["title"] == "Time":
 				_open_clock()
 			elif tile["title"] == "Study":
 				_open_study("home")
+			elif tile["title"] == "Environment":
+				_open_environment()
 			elif tile["title"] == "Reminders":
 				_open_reminders()
 			elif tile["title"] == "Calendar":
@@ -906,6 +932,9 @@ func _activate_quick_shelf_tile(tile_name: String) -> void:
 	elif tile_name == "Study":
 		quick_shelf_status_text = "Opening Study"
 		_open_study("home")
+	elif tile_name == "Air Quality" or tile_name == "Temperature" or tile_name == "Environment":
+		quick_shelf_status_text = "Opening Environment"
+		_open_environment()
 	elif tile_name == "Study Stats":
 		quick_shelf_status_text = "Opening Study Stats"
 		_open_study("stats")
@@ -3366,6 +3395,25 @@ func _update_inactivity(delta: float) -> void:
 
 func _reset_user_activity() -> void:
 	inactivity_elapsed = 0.0
+	last_seen_user_at = elapsed
+	if clock_shown_for_absence and nav.current_screen == "Clock":
+		clock_shown_for_absence = false
+
+func _update_presence_face_clock(delta: float) -> void:
+	hardware_presence_active = hardware_connected and not hardware_stale and bool(hardware_state_data.get("presence", false))
+	if hardware_presence_active:
+		presence_absence_seconds = 0.0
+		last_seen_user_at = elapsed
+		if clock_shown_for_absence and nav.current_screen == "Clock":
+			clock_shown_for_absence = false
+			_go_home()
+		return
+	presence_absence_seconds += delta
+	if nav.current_screen != "Face Home" or home_message_active or text_input_open or transition_active:
+		return
+	if presence_absence_seconds >= presence_show_clock_after_seconds:
+		clock_shown_for_absence = true
+		_open_clock()
 
 func _sync_notification_policy_after_rebuild() -> void:
 	notification_indicator_count = notifications_data.size()
@@ -3794,6 +3842,7 @@ func _ttt_result_title() -> String:
 	return "Player " + tic_tac_toe_result + " wins"
 
 func _open_menu() -> void:
+	hardware_menu_focus_index = 0
 	_navigate_to("Menu", "menu_open")
 
 func _open_clock() -> void:
@@ -3821,6 +3870,13 @@ func _open_quick_shelf() -> void:
 	quick_shelf_scroll_y = 0.0
 	if settings_data.is_empty():
 		api.request_get("/api/settings")
+
+func _open_environment() -> void:
+	nav.previous_screen = nav.current_screen
+	nav.current_screen = "Environment"
+	transition_active = false
+	api.request_get("/api/hardware/state")
+	_request_redraw()
 
 func _open_study(page: String = "home") -> void:
 	nav.previous_screen = nav.current_screen
@@ -3942,6 +3998,8 @@ func _go_home() -> void:
 		reminders_mode = "list"
 	elif nav.current_screen == "Calendar":
 		calendar_mode = "details"
+	elif nav.current_screen == "Environment":
+		pass
 	elif nav.current_screen == "To Do":
 		todo_mode = "lists"
 	elif nav.current_screen == "Games":
@@ -3976,14 +4034,19 @@ func _request_redraw() -> void:
 	redraw_requested = true
 
 func _update_api_polling(delta: float) -> void:
-	if api.in_flight:
-		return
+	hardware_poll_elapsed += delta
 	api_poll_accumulator += delta
 	study_timer_poll_accumulator += delta
 	reminders_poll_accumulator += delta
 	calendar_poll_accumulator += delta
 	todo_poll_accumulator += delta
+	if api.in_flight:
+		return
 	if transition_active:
+		return
+	if hardware_poll_elapsed >= hardware_poll_interval_seconds:
+		hardware_poll_elapsed = 0.0
+		api.request_get("/api/hardware/state")
 		return
 	var reminders_interval := 1.0 if reminders_due_modal_open else 5.0
 	if reminders_poll_accumulator >= reminders_interval:
@@ -4087,6 +4150,8 @@ func _on_api_data_received(endpoint: String, payload: Dictionary) -> void:
 			sound_percent = int(payload.get("sound_percent", sound_percent))
 		quiet_mode_local = bool(payload.get("quiet_mode", quiet_mode_local))
 		remote_network_local = str(payload.get("remote_network_state", remote_network_local))
+	elif endpoint == "/api/hardware/state":
+		_handle_hardware_state_payload(payload)
 	elif endpoint.begins_with("/api/calendar/"):
 		_handle_calendar_api(endpoint, payload)
 	elif endpoint.begins_with("/api/todo/"):
@@ -4628,9 +4693,88 @@ func _reminders_restore_selected_from_data() -> void:
 func _on_api_offline(endpoint: String) -> void:
 	api_online = false
 	api_status_text = "API offline"
+	if endpoint == "/api/hardware/state":
+		hardware_connected = false
+		hardware_stale = true
 	if endpoint == "/api/camera/preview/frame" and camera_preview_on:
 		camera_preview_status = "No frame yet"
 	_request_redraw()
+
+func _handle_hardware_state_payload(payload: Dictionary) -> void:
+	var state_raw = payload.get("state", {})
+	if not (state_raw is Dictionary):
+		hardware_connected = false
+		hardware_stale = true
+		return
+	hardware_state_data = state_raw as Dictionary
+	hardware_connected = bool(hardware_state_data.get("connected", false))
+	hardware_stale = bool(hardware_state_data.get("stale", true))
+	hardware_last_seen_at = str(hardware_state_data.get("last_seen_at", ""))
+	_handle_hardware_joystick()
+
+func _handle_hardware_joystick() -> void:
+	var joystick := str(hardware_state_data.get("joystick", "UNKNOWN")).to_upper()
+	if joystick == "CENTER" or joystick == "UNKNOWN":
+		hardware_last_joystick = joystick
+		return
+	var cooldown := joystick_select_cooldown_seconds if joystick == "SELECT" else joystick_repeat_delay_seconds
+	if elapsed - hardware_last_joystick_action_at < cooldown:
+		hardware_last_joystick = joystick
+		return
+	hardware_last_joystick_action_at = elapsed
+	hardware_last_joystick = joystick
+	# This maps ESP joystick values to the current UI helpers without faking key events.
+	if nav.current_screen == "Face Home":
+		if joystick == "LEFT":
+			_open_menu()
+		elif joystick == "RIGHT":
+			_open_clock()
+		elif joystick == "DOWN":
+			_open_control_center()
+		elif joystick == "UP":
+			_open_quick_shelf()
+		elif joystick == "SELECT" and home_message_active:
+			if not home_message_actions.is_empty():
+				_activate_home_message_action(str((home_message_actions[0] as Dictionary).get("id", "")))
+	elif nav.current_screen == "Clock" and joystick != "CENTER":
+		_go_home()
+	elif nav.current_screen == "Menu":
+		if joystick == "LEFT":
+			hardware_menu_focus_index = maxi(0, hardware_menu_focus_index - 1)
+		elif joystick == "RIGHT":
+			hardware_menu_focus_index = mini(MENU_TILES.size() - 1, hardware_menu_focus_index + 1)
+		elif joystick == "UP":
+			hardware_menu_focus_index = maxi(0, hardware_menu_focus_index - 2)
+		elif joystick == "DOWN":
+			hardware_menu_focus_index = mini(MENU_TILES.size() - 1, hardware_menu_focus_index + 2)
+		elif joystick == "SELECT":
+			_activate_menu_tile(hardware_menu_focus_index)
+		_request_redraw()
+
+func _activate_menu_tile(index: int) -> void:
+	if index < 0 or index >= MENU_TILES.size():
+		return
+	var tile: Dictionary = MENU_TILES[index] as Dictionary
+	if tile["title"] == "Time":
+		_open_clock()
+	elif tile["title"] == "Study":
+		_open_study("home")
+	elif tile["title"] == "Environment":
+		_open_environment()
+	elif tile["title"] == "Reminders":
+		_open_reminders()
+	elif tile["title"] == "Calendar":
+		_open_calendar()
+	elif tile["title"] == "To Do":
+		_open_todo()
+	elif tile["title"] == "Games":
+		_open_games()
+	elif tile["title"] == "Diagnostics":
+		_open_diagnostics()
+	elif tile["title"] == "Settings":
+		_open_settings()
+	else:
+		_open_placeholder(str(tile["title"]) + " placeholder")
 
 func _on_camera_frame_received(_endpoint: String, body: PackedByteArray) -> void:
 	var image := Image.new()
@@ -4713,6 +4857,8 @@ func _draw_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_quick_shelf()
 		"Diagnostics":
 			_draw_diagnostics()
+		"Environment":
+			_draw_environment()
 		"Settings":
 			_draw_settings()
 		"Study":
@@ -4742,6 +4888,8 @@ func _draw_overlay_screen(screen_name: String, offset: Vector2) -> void:
 			_draw_control_center()
 		"Quick Shelf":
 			_draw_quick_shelf()
+		"Environment":
+			_draw_environment()
 		"Reminders":
 			_draw_reminders()
 		"Calendar":
@@ -4955,6 +5103,7 @@ func _draw_top_bar_indicators() -> void:
 		return
 	_update_message_indicator_count()
 	notification_indicator_count = notifications_data.size()
+	_draw_hardware_status_indicator()
 	if nav.current_screen == "Face Home":
 		_draw_home_clock()
 	if nav.current_screen == "Face Home" and not home_message_active and nexa_message_indicator_count <= 0 and notification_indicator_count <= 0:
@@ -4963,6 +5112,21 @@ func _draw_top_bar_indicators() -> void:
 		_draw_message_indicator(_message_indicator_rect(), nexa_message_indicator_count)
 	if notification_indicator_count > 0:
 		_draw_notification_indicator(_notification_indicator_rect(), notification_indicator_count)
+
+func _hardware_status_label() -> String:
+	if hardware_connected and not hardware_stale:
+		return "Local network connected"
+	return "Local network disconnected"
+
+func _hardware_status_color() -> Color:
+	if hardware_connected and not hardware_stale:
+		return Color(0.32, 0.86, 0.52, 0.92)
+	return Color(0.96, 0.34, 0.34, 0.90)
+
+func _draw_hardware_status_indicator() -> void:
+	var color := _hardware_status_color()
+	draw_circle(Vector2(17.0, 19.0), 4.0, color)
+	_draw_text(_hardware_status_label(), Vector2(28.0, 23.0), 11, Color(color.r, color.g, color.b, 0.92))
 
 func _draw_message_indicator(rect: Rect2, count: int) -> void:
 	var color := Color(0.34, 0.62, 1.0, 0.92)
@@ -5070,15 +5234,16 @@ func _draw_menu() -> void:
 	for index in range(MENU_TILES.size()):
 		var rect: Rect2 = _menu_tile_rect(index)
 		var tile: Dictionary = MENU_TILES[index] as Dictionary
-		_draw_tile(rect, tile["title"] == "Diagnostics")
-		_draw_text(str(tile["icon"]), rect.position + Vector2(18, 45), 22, ThemeScript.BLUE if tile["title"] == "Diagnostics" else ThemeScript.TEXT)
+		var active := index == hardware_menu_focus_index
+		_draw_tile(rect, active)
+		_draw_text(str(tile["icon"]), rect.position + Vector2(18, 45), 22, ThemeScript.BLUE if active else ThemeScript.TEXT)
 		_draw_text(str(tile["title"]), rect.position + Vector2(58, 30), 17, ThemeScript.TEXT)
 		_draw_text(str(tile["subtitle"]), rect.position + Vector2(58, 52), 11, ThemeScript.TEXT_MUTED)
 
 func _menu_tile_rect(index: int) -> Rect2:
 	var column: int = index % 2
 	var row: int = int(index / 2)
-	return Rect2(28.0 + float(column) * 300.0, 96.0 + float(row) * 86.0, 284.0, 72.0)
+	return Rect2(28.0 + float(column) * 300.0, 92.0 + float(row) * 76.0, 284.0, 72.0)
 
 func _draw_clock() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
@@ -5126,6 +5291,43 @@ func _draw_centered_segments(segments: Array, center_x: float, baseline_y: float
 		var color: Color = segment.get("color", ThemeScript.TEXT)
 		_draw_text(text, Vector2(cursor_x, baseline_y), size, color)
 		cursor_x += _font().get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x
+
+func _draw_environment() -> void:
+	draw_rect(Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)), _theme_background_color(), true)
+	_draw_text("Environment", Vector2(44, 58), 27, ThemeScript.TEXT)
+	_draw_button(Rect2(520, 22, 92, 34), "Home", false)
+	if not hardware_connected or hardware_stale or hardware_state_data.is_empty():
+		_draw_soft_panel(Rect2(64, 144, 512, 184), 28.0)
+		_draw_centered_text("Waiting for ESP8266 sensor data...", 320.0, 210.0, 18, ThemeScript.TEXT)
+		var message := "Sensor data is stale." if hardware_stale and hardware_last_seen_at != "" else "Local network disconnected"
+		_draw_centered_text(message, 320.0, 242.0, 13, Color(0.96, 0.42, 0.42, 0.92))
+		_draw_centered_text("Waiting for live update...", 320.0, 270.0, 12, ThemeScript.TEXT_MUTED)
+		return
+	var air_status := str(hardware_state_data.get("air_status", "UNKNOWN"))
+	var accent := Color(0.30, 0.88, 0.52, 0.95)
+	if air_status == "VENTILATE":
+		accent = Color(1.0, 0.66, 0.24, 0.95)
+	var cards: Array = [
+		{"title": "Temperature", "value": _hardware_value("temperature_c", "°C")},
+		{"title": "Humidity", "value": _hardware_value("humidity_percent", "%")},
+		{"title": "Pressure", "value": _hardware_value("pressure_hpa", " hPa")},
+		{"title": "Gas resistance", "value": _hardware_value("gas_kohms", " kΩ")},
+		{"title": "Air status", "value": air_status.capitalize()},
+		{"title": "Advice", "value": str(hardware_state_data.get("advice", "Waiting for live data"))}
+	]
+	for index in range(cards.size()):
+		var rect := Rect2(44.0 + float(index % 2) * 276.0, 112.0 + float(int(index / 2)) * 80.0, 252.0, 64.0)
+		var item: Dictionary = cards[index] as Dictionary
+		_draw_tile(rect, false)
+		_draw_text(str(item["title"]), rect.position + Vector2(14, 22), 11, ThemeScript.TEXT_MUTED)
+		_draw_text(_short_text(str(item["value"]), 26), rect.position + Vector2(14, 48), 18 if index < 4 else 15, accent if index >= 4 else ThemeScript.TEXT)
+	_draw_text("Last seen " + hardware_last_seen_at, Vector2(48, 392), 11, ThemeScript.TEXT_MUTED)
+
+func _hardware_value(key: String, suffix: String) -> String:
+	var value = hardware_state_data.get(key, null)
+	if value == null:
+		return "Waiting"
+	return str(value) + suffix
 
 func _draw_control_center() -> void:
 	if CONTROL_CENTER_SAFE_MODE:

@@ -16,6 +16,7 @@ Face Home is the center of the UI.
 - Tap the face to show a small status bubble.
 - Long press the face to show a setup placeholder.
 - Menu Time opens the same Clock screen as the Face Home swipe gesture.
+- Menu Environment opens the Environment screen for ESP8266/BME688 room data.
 - Clock shows hours, minutes, seconds, day, month, and year.
 - Clock closes back to Face Home with any swipe.
 
@@ -49,6 +50,16 @@ Godot is the local visual UI layer only. Python remains the backend and the sour
 The UI must not run hardware checks directly. Later it should read from the Python backend API or saved diagnostic reports.
 
 The current prototype now reads live diagnostics through the local Python API at `127.0.0.1:8769`.
+
+The UI also polls `/api/hardware/state` about once per second for local hardware state.
+
+"Local network connected" means NeXa is receiving recent ESP8266 hardware data. It does not mean the internet is connected.
+
+The top-left local network indicator shows connected or disconnected based on fresh ESP8266 data.
+
+The Environment screen shows temperature, humidity, pressure, gas resistance, air status, and advice when live data is available.
+
+The UI does not configure Wi-Fi, routing, DHCP, hotspot, or access point settings.
 
 - Godot does not run hardware checks or shell commands directly.
 - Control Center uses a lightweight `/api/control-center` request so opening it stays instant.

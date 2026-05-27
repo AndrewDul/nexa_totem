@@ -203,6 +203,43 @@ class GodotUiStructureTests(unittest.TestCase):
         self.assertIn("stale_timeout_seconds", preview)
         self.assertNotIn("rpicam-still", preview)
 
+    def test_hardware_gateway_foundation_is_represented(self):
+        root = REPO_ROOT
+        main = self.read(GODOT_DIR / "scripts/main.gd")
+        live_api = self.read(root / "system/services/diagnostics/live_api.py")
+        hardware_state = self.read(root / "system/services/hardware_gateway/hardware_state.py")
+        self.assertTrue((root / "system/services/hardware_gateway").exists())
+        self.assertTrue((root / "system/services/hardware_gateway/README.md").exists())
+        self.assertIn("class HardwareStateStore", hardware_state)
+        self.assertTrue((root / "scripts/run/run_hardware_gateway_dev.py").exists())
+        self.assertTrue((root / "scripts/test/check_hardware_gateway_api.py").exists())
+        for endpoint in ["/api/hardware/state", "/api/hardware", "/hardware-dashboard"]:
+            self.assertIn(endpoint, live_api)
+        self.assertIn('"title": "Environment"', main)
+        self.assertIn('"subtitle": "Air & room"', main)
+        self.assertIn('nav.current_screen = "Environment"', main)
+        self.assertIn("func _draw_environment", main)
+        self.assertIn("Local network connected", main)
+        self.assertIn("Local network disconnected", main)
+        self.assertIn("hardware_poll_interval_seconds := 1.0", main)
+        self.assertIn('api.request_get("/api/hardware/state")', main)
+        self.assertIn("last_seen_user_at", main)
+        self.assertIn("hardware_presence_active", main)
+        self.assertIn("presence_show_clock_after_seconds := 30.0", main)
+        self.assertIn("func _update_presence_face_clock", main)
+        self.assertIn("joystick_repeat_delay_seconds := 0.35", main)
+        self.assertIn("joystick_select_cooldown_seconds := 0.5", main)
+        self.assertIn("func _handle_hardware_joystick", main)
+
+    def test_hardware_gateway_scripts_do_not_configure_networking(self):
+        text = "\n".join([
+            self.read(REPO_ROOT / "scripts/run/run_hardware_gateway_dev.py"),
+            self.read(REPO_ROOT / "scripts/test/check_hardware_gateway_api.py"),
+        ])
+        for term in ["nmcli", "hostapd", "dnsmasq", "iptables", "nft ", "systemctl restart NetworkManager", "ifconfig", "iw ", "ip route"]:
+            self.assertNotIn(term, text)
+        self.assertNotIn("nexa12345", text)
+
     def test_active_card_full_blue_style_is_represented(self):
         main = self.read(GODOT_DIR / "scripts/main.gd")
         self.assertIn("Color(0.11, 0.32, 0.66, 1.0)", main)

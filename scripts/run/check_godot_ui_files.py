@@ -68,6 +68,11 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     reminders_store = REPO_ROOT / "system/services/reminders/reminders_store.py"
     calendar_store = REPO_ROOT / "system/services/calendar/calendar_store.py"
     todo_store = REPO_ROOT / "system/services/todo/todo_store.py"
+    hardware_gateway_dir = REPO_ROOT / "system/services/hardware_gateway"
+    hardware_state = hardware_gateway_dir / "hardware_state.py"
+    hardware_readme = hardware_gateway_dir / "README.md"
+    hardware_dev_runner = REPO_ROOT / "scripts/run/run_hardware_gateway_dev.py"
+    hardware_api_check = REPO_ROOT / "scripts/test/check_hardware_gateway_api.py"
     api_client = scripts_dir / "diagnostics_api_client.gd"
     home_dir = scripts_dir / "home"
     home_messages_dir = home_dir / "messages"
@@ -96,6 +101,9 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     reminders_store_text = read_text(reminders_store)
     calendar_store_text = read_text(calendar_store)
     todo_store_text = read_text(todo_store)
+    hardware_state_text = read_text(hardware_state)
+    hardware_dev_runner_text = read_text(hardware_dev_runner)
+    hardware_api_check_text = read_text(hardware_api_check)
     design_tokens_text = read_text(design_tokens)
     nexa_message_text = read_text(nexa_message)
     message_queue_text = read_text(message_queue)
@@ -138,6 +146,11 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("study_store_exists", study_store.exists(), "Study store exists.")
     add("reminders_store_exists", reminders_store.exists(), "Reminders store exists.")
     add("todo_store_exists", todo_store.exists(), "To Do store exists.")
+    add("hardware_gateway_folder", hardware_gateway_dir.exists(), "Hardware gateway folder exists.")
+    add("hardware_gateway_readme", hardware_readme.exists(), "Hardware gateway README exists.")
+    add("hardware_state_store", "class HardwareStateStore" in hardware_state_text, "HardwareStateStore exists.")
+    add("run_hardware_gateway_dev", hardware_dev_runner.exists(), "Hardware gateway dev runner exists.")
+    add("check_hardware_gateway_api", hardware_api_check.exists(), "Hardware gateway API check exists.")
     add("api_localhost", "127.0.0.1" in live_api_text and "8769" in live_api_text, "API binds localhost port 8769.")
     add("home_system_folder_structure", all(path.exists() for path in [home_dir, home_messages_dir, home_behaviors_dir, system_scripts_dir, system_notifications_dir, assets_dir, icons_dir]), "Home/system/assets folder structure exists.")
     add("home_system_readmes", all((path / "README.md").exists() for path in [home_dir, home_messages_dir, home_behaviors_dir, system_scripts_dir, system_notifications_dir, assets_dir, icons_dir]), "New Home/system/assets folders have README files.")
@@ -162,6 +175,7 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("study_api_endpoints", "/api/study/overview" in live_api_text and "/api/study/pomodoro/start" in live_api_text and "/api/study/flashcards/decks/create" in live_api_text and "/api/study/quizzes/create" in live_api_text and "/api/study/languages/lists/create" in live_api_text and "/api/study/stats" in live_api_text, "Study API endpoints exist.")
     add("reminders_api_endpoints", all(endpoint in live_api_text for endpoint in ["/api/reminders/overview", "/api/reminders/list", "/api/reminders/due", "/api/reminders/create", "/api/reminders/update", "/api/reminders/delete", "/api/reminders/dismiss", "/api/reminders/mark-triggered", "/api/reminders/settings/stats"]), "Reminders API endpoints exist.")
     add("todo_api_endpoints", all(endpoint in live_api_text for endpoint in ["/api/todo/overview", "/api/todo/lists", "/api/todo/lists/create", "/api/todo/lists/update", "/api/todo/lists/delete", "/api/todo/tasks", "/api/todo/tasks/create", "/api/todo/tasks/update", "/api/todo/tasks/delete", "/api/todo/tasks/mark-done", "/api/todo/tasks/mark-active", "/api/todo/due", "/api/todo/dismiss", "/api/todo/snooze", "/api/todo/settings/stats"]), "To Do API endpoints exist.")
+    add("hardware_api_endpoints", "/api/hardware/state" in live_api_text and "/api/hardware" in live_api_text and "/hardware-dashboard" in live_api_text, "Hardware API endpoints exist in localhost API.")
     add("study_sqlite_store", "sqlite3" in study_store_text and "var/data/study/nexa_study.db" in study_store_text and "NEXA_STUDY_DB_PATH" in study_store_text, "Study store uses local SQLite with test DB override.")
     add("reminders_sqlite_store", "sqlite3" in reminders_store_text and "var/data/reminders/nexa_reminders.db" in reminders_store_text and "NEXA_REMINDERS_DB_PATH" in reminders_store_text and "PRAGMA user_version = 1" in reminders_store_text, "Reminders store uses local SQLite with schema version and test DB override.")
     add("todo_sqlite_store", "sqlite3" in todo_store_text and "var/data/todo/nexa_todo.db" in todo_store_text and "NEXA_TODO_DB_PATH" in todo_store_text and "PRAGMA user_version = 1" in todo_store_text and "todo_lists" in todo_store_text and "todo_tasks" in todo_store_text, "To Do store uses local SQLite with schema version and test DB override.")
@@ -206,6 +220,16 @@ def validate_godot_ui_files(project_dir=PROJECT_DIR):
     add("active_full_blue", "Color(0.11, 0.32, 0.66, 1.0)" in main_text, "Active/pressed cards use full-blue styling.")
     add("rounded_style_helpers", "draw_card" in all_text and "draw_pill" in all_text and "draw_tile" in all_text, "Rounded card, pill, and tile helpers exist.")
     add("menu_tile_cards", "_draw_tile(rect" in main_text and "MENU_TILES" in main_text, "Menu tile card drawing is represented.")
+    add("environment_tile", '"title": "Environment"' in main_text and '"subtitle": "Air & room"' in main_text, "Environment menu tile exists.")
+    add("environment_screen", 'nav.current_screen = "Environment"' in main_text and "func _draw_environment" in main_text, "Environment screen exists.")
+    add("hardware_status_indicator", "Local network connected" in main_text and "Local network disconnected" in main_text and "func _draw_hardware_status_indicator" in main_text, "Local network status indicator exists.")
+    add("hardware_polling_interval", "hardware_poll_interval_seconds := 1.0" in main_text and 'api.request_get("/api/hardware/state")' in main_text and "hardware_poll_elapsed += delta" in main_text, "Hardware polling runs around once per second.")
+    add("presence_foundation", "last_seen_user_at" in main_text and "hardware_presence_active" in main_text and "presence_absence_seconds" in main_text and "presence_show_clock_after_seconds := 30.0" in main_text and "func _update_presence_face_clock" in main_text, "Presence Face/Clock foundation exists.")
+    add("joystick_foundation", "hardware_last_joystick" in main_text and "joystick_repeat_delay_seconds := 0.35" in main_text and "joystick_select_cooldown_seconds := 0.5" in main_text and "func _handle_hardware_joystick" in main_text, "Joystick debounce foundation exists.")
+    banned_network_terms = ["nmcli", "hostapd", "dnsmasq", "iptables", "nft ", "systemctl restart NetworkManager", "ifconfig", "iw ", "ip route"]
+    new_script_text = hardware_dev_runner_text + "\n" + hardware_api_check_text
+    add("hardware_scripts_no_network_config_commands", all(term not in new_script_text for term in banned_network_terms), "Hardware scripts do not contain network configuration commands.")
+    add("no_hardcoded_wifi_password_in_code", "nexa12345" not in new_script_text and "nexa12345" not in main_text and "nexa12345" not in live_api_text, "No hardcoded Wi-Fi password appears in code.")
     add("menu_tile_width", "284.0" in main_text, "Menu tile width 284 is represented.")
     add("menu_tile_height", "72.0" in main_text, "Menu tile height 72 is represented.")
     add("menu_two_columns", "index % 2" in main_text and "300.0" in main_text, "Menu uses two columns.")

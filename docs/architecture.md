@@ -681,3 +681,23 @@ I shortened NeXa Home message preview timing from 10 visible seconds to 4 visibl
 The timer still only counts while the message is actually fully visible on Home. It does not count during the enter animation, the exit animation, or while the user is on another screen.
 
 Existing enter/exit animations, close button, notification indicators, swipe dismiss, and reminder/calendar/To Do preview flow stay unchanged.
+
+## 2026-05-27 — Hardware Gateway Server Foundation
+
+I added the safe hardware gateway foundation.
+
+Raspberry Pi receives ESP8266 JSON through a local HTTP endpoint.
+
+The server keeps only the latest state in memory for now.
+
+I added state fields for presence, distance, joystick, BME688 environment data, Wi-Fi RSSI and raw Arduino line.
+
+I added a local network status indicator in the UI.
+
+I added an Environment screen foundation.
+
+I added safe foundations for presence-based Face/Clock behavior and joystick menu navigation.
+
+I did not change Raspberry Pi Wi-Fi or hotspot configuration in this sprint, so internet/SSH is safe.
+
+The future hotspot will be a separate sprint.

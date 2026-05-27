@@ -30,6 +30,8 @@ from system.services.study import study_store
 from system.services.reminders import reminders_store
 from system.services.calendar import calendar_store
 from system.services.todo import todo_store
+from system.services.hardware_gateway import latest_hardware_state
+from system.services.hardware_gateway.hardware_dashboard import render_dashboard
 
 
 HOST = "127.0.0.1"
@@ -87,6 +89,14 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _html(self, body_text, status=200):
+        body = body_text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _body_json(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
         if not length:
@@ -96,6 +106,16 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             return {}
 
+    def _body_json_checked(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if not length:
+            return {}, True
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {}, False
+        return (data if isinstance(data, dict) else {}), isinstance(data, dict)
+
     def do_GET(self):  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
@@ -103,6 +123,10 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
         try:
             if path == "/health":
                 self._json({"status": "ok", "host": HOST, "port": PORT})
+            elif path == "/hardware-dashboard":
+                self._html(render_dashboard(latest_hardware_state.as_dict()))
+            elif path == "/api/hardware/state":
+                self._json({"status": "ok", "state": latest_hardware_state.as_dict()})
             elif path == "/api/study/overview":
                 self._json(study_store.overview())
             elif path == "/api/study/stats":
@@ -214,6 +238,14 @@ class DiagnosticsHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         path = urlparse(self.path).path
+        if path == "/api/hardware":
+            data, valid = self._body_json_checked()
+            if not valid:
+                self._json({"status": "error", "error": "invalid_json"}, status=400)
+                return
+            state = latest_hardware_state.update(data)
+            self._json({"status": "ok", "connected": bool(state.get("connected", False)), "received": True})
+            return
         data = self._body_json()
         if path == "/api/study/pomodoro/start":
             self._json(study_store.start_pomodoro(data.get("topic", ""), data.get("planned_minutes", 25), data.get("break_minutes", 0)))
